@@ -17,6 +17,7 @@ if [ "$DO_FEATURE_MATRIX" = true ]; then
     # No features.
     cargo build --no-default-features
     cargo test --no-default-features
+    cargo build --bin wallet
 fi
 
 if [ "$DO_LINT" = true ]
