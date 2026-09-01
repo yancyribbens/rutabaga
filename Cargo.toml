@@ -1,0 +1,13 @@
+[package]
+name = "rutabaga"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bitcoin = { version = "0.32.8", features = ["rand-std"] }
+clap = { version = "4", features = ["derive"]  }
+
+[workspace]
+
+[[bin]]
+name = "cli"
