@@ -2,9 +2,8 @@ use bitcoin::secp256k1::rand;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, Network};
 use clap::Parser;
-use std::fs::File;
-use std::io::Write;
 use std::path::PathBuf;
+use std::{fs, io::Write};
 
 #[derive(clap::Parser)]
 #[command(author, version, about, long_about = None)]
@@ -43,8 +42,13 @@ fn main() {
             let address = Address::p2tr(&s, internal_key, None, Network::Signet);
             println!("{:?}", address);
 
-            let mut file = File::create_new(out.unwrap()).unwrap();
-            file.write_all(&priv_key.secret_bytes()).unwrap();
+            if let Some(o) = out {
+                let mut file = fs::File::create_new(o).unwrap();
+                file.write_all(&priv_key.secret_bytes()).unwrap();
+            } else {
+                let display = priv_key.display_secret();
+                println!("secret_key={}", display);
+            }
         }
         Commands::Wallet(WalletCmd::PrintKeysFromKeysFile { path: _ }) => {
             todo!()
