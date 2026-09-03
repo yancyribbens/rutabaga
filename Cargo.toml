@@ -6,8 +6,7 @@ edition = "2021"
 [dependencies]
 bitcoin = { version = "0.32.8", features = ["rand-std"] }
 clap = { version = "4", features = ["derive"]  }
-
-[workspace]
+bitcoinkernel = "0.3"
 
 [[bin]]
 name = "cli"
