@@ -3,6 +3,7 @@ use bitcoin::secp256k1::rand;
 use bitcoin::secp256k1::{Secp256k1, SecretKey};
 use bitcoin::{Address, Network};
 use clap::Parser;
+use rutabaga::output_ledger;
 use std::path::PathBuf;
 use std::{fs, io::Write};
 
@@ -30,6 +31,8 @@ enum WalletCmd {
     },
     /// TODO
     PrintKeysFromKeysFile { path: PathBuf },
+    /// TODO
+    PrintOutputs { path: PathBuf },
 }
 
 fn main() {
@@ -59,6 +62,15 @@ fn main() {
             let address = Address::p2tr(&s, kp.x_only_public_key().0, None, Network::Signet);
             println!("{:?}", address);
             println!("{}", kp.secret_key().display_secret());
+        }
+        Commands::Wallet(WalletCmd::PrintOutputs { path }) => {
+            let outs = output_ledger::read(&path);
+            println!("output count: {:?}", outs.len());
+
+            for out in outs {
+                println!();
+                println!("{:#?}", out);
+            }
         }
     }
 }

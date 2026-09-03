@@ -20,3 +20,17 @@ Print Keys File
 ```
 cargo run --bin cli wallet print-keys-from-keys-file ~/rutabaga_keys
 ```
+
+# Node
+
+run node with wallet env vars
+```
+RUTABAGA_KEY_FILE=~/rutabaga_keys RUTABAGA_LEDGER_FILE=~/rutabaga_output_ledger cargo run --bin node --release -- --network signet
+```
+
+# Ledger
+
+show ledger outputs 
+```
+cargo run --bin cli wallet print-outputs ~/rutabaga_output_ledger
+```
