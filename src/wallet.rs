@@ -5,11 +5,14 @@ pub struct Wallet {
 }
 pub struct Error {}
 
+
+use bitcoin::key::{Keypair};
 use bitcoin::secp256k1::{SecretKey, XOnlyPublicKey};
-use bitcoin::{Amount, FeeRate};
+use bitcoin::{Amount, FeeRate, Script, ScriptBuf};
 use bitcoin::transaction::Version;
 use bitcoin::absolute::LockTime;
 use bitcoin::Address;
+use bitcoin::secp256k1::{Secp256k1};
 use std::fmt;
 use bitcoinkernel::core::TransactionExt;
 use bitcoinkernel::core::TxOutExt;
@@ -58,23 +61,36 @@ impl Wallet {
         v.into_iter();
     }
 
+    fn read_pubkey_from_file() -> ScriptBuf {
+        let s = Secp256k1::new();
+        let bytes: Vec<u8> = std::fs::read("/tmp/rutabaga").unwrap();
+        let sk = SecretKey::from_slice(&bytes).unwrap();
+        let kp = Keypair::from_secret_key(&s, &sk);
+        ScriptBuf::new_p2tr(&s, kp.x_only_public_key().0, None)
+    }
+
     pub fn scan_block(
         &mut self,
         kernel_block: bitcoinkernel::Block,
         _spent_outputs: bitcoinkernel::BlockSpentOutputs,
         _block_height: u32,
     ) -> usize {
+        let file_script = Self::read_pubkey_from_file();
 
         // ignore first transaction in block as coin-base
         for tx in kernel_block.transactions().skip(1) {
             for out in tx.outputs() {
                 let _val = out.value();
                 let script_pubkey = out.script_pubkey();
-                let _bytes = script_pubkey.to_bytes();
+                let script_bytes = script_pubkey.as_bytes();
 
-                // TODO
-                // create bitcoin script_buf using new_tr(secp, pub_key, None)
-                // then compare the bytes to see if its a match
+                let chain_script = Script::from_bytes(script_bytes);
+
+                if chain_script.is_p2tr() {
+                    if *file_script == *chain_script {
+                        panic!("found match on chain");
+                    }
+                }
             }
         }
 
