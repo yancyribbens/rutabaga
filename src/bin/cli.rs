@@ -1,6 +1,7 @@
 use bitcoin::secp256k1::rand;
-use bitcoin::secp256k1::Secp256k1;
-use bitcoin::{Address, Network};
+use bitcoin::key::{Keypair};
+use bitcoin::secp256k1::{Secp256k1, SecretKey};
+use bitcoin::{Address, Network, ScriptBuf};
 use clap::Parser;
 use std::path::PathBuf;
 use std::{fs, io::Write};
@@ -50,8 +51,14 @@ fn main() {
                 println!("secret_key={}", display);
             }
         }
-        Commands::Wallet(WalletCmd::PrintKeysFromKeysFile { path: _ }) => {
-            todo!()
+        Commands::Wallet(WalletCmd::PrintKeysFromKeysFile { path }) => {
+            let s = Secp256k1::new();
+            let bytes: Vec<u8> = fs::read(path).unwrap();
+            let sk = SecretKey::from_slice(&bytes).unwrap();
+            let kp = Keypair::from_secret_key(&s, &sk);
+            let address = Address::p2tr(&s, kp.x_only_public_key().0, None, Network::Signet);
+            println!("{:?}", address);
+            println!("{}", kp.secret_key().display_secret());
         }
     }
 }
