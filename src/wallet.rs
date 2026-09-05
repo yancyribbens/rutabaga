@@ -61,12 +61,18 @@ impl Wallet {
         v.into_iter();
     }
 
-    fn read_pubkey_from_file() -> ScriptBuf {
+    fn read_pubkey_from_file() -> (ScriptBuf, u64) {
         let s = Secp256k1::new();
-        let bytes: Vec<u8> = std::fs::read("/tmp/rutabaga").unwrap();
-        let sk = SecretKey::from_slice(&bytes).unwrap();
+        let bytes: Vec<u8> = std::fs::read("/tmp/rutabaga_with_amt").unwrap();
+        assert_eq!(bytes.len(), 40);
+        let mut buf = [0; 32 + 8]; // p2tr key + amount
+        buf[0..32 + 8].copy_from_slice(&bytes);
+        let sk = SecretKey::from_slice(&buf[0..32]).unwrap();
         let kp = Keypair::from_secret_key(&s, &sk);
-        ScriptBuf::new_p2tr(&s, kp.x_only_public_key().0, None)
+        let script = ScriptBuf::new_p2tr(&s, kp.x_only_public_key().0, None);
+        let amount_bytes = &buf[32..32 + 8];
+        let amount = u64::from_ne_bytes(amount_bytes.try_into().unwrap());
+        (script, amount)
     }
 
     pub fn scan_block(
@@ -75,7 +81,7 @@ impl Wallet {
         _spent_outputs: bitcoinkernel::BlockSpentOutputs,
         _block_height: u32,
     ) -> usize {
-        let file_script = Self::read_pubkey_from_file();
+        let (file_script, amount) = Self::read_pubkey_from_file();
 
         // ignore first transaction in block as coin-base
         for tx in kernel_block.transactions().skip(1) {

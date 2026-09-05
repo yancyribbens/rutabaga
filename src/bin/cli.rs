@@ -44,8 +44,11 @@ fn main() {
             println!("{:?}", address);
 
             if let Some(o) = out {
+                assert_eq!(priv_key.secret_bytes().len(), 32);
+                let mut buf = [0; 32 + 8]; // p2tr key + amount
+                buf[..32].copy_from_slice(&priv_key.secret_bytes());
                 let mut file = fs::File::create_new(o).unwrap();
-                file.write_all(&priv_key.secret_bytes()).unwrap();
+                file.write_all(&buf).unwrap();
             } else {
                 let display = priv_key.display_secret();
                 println!("secret_key={}", display);
