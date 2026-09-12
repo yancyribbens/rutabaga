@@ -68,7 +68,11 @@ fn main() {
             println!("output count: {:?}", outs.len());
 
             for out in outs {
-                println!("{:#?}", out);
+                let (outpoint, ref txout) = out;
+                let script_pubkey = &txout.script_pubkey;
+                let address = Address::from_script(script_pubkey, Network::Signet).unwrap();
+                let output = (outpoint, txout, address);
+                println!("{:#?}", output);
             }
         }
     }
