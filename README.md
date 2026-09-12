@@ -49,3 +49,10 @@ print balance
 ```
 cargo run --bin cli wallet print-balance ~/rutabaga_output_ledger ~/rutabaga_spent_ledger
 ```
+
+# transaction
+
+spend output 0 at 5 sats/vB
+```
+cargo run --bin cli wallet spend-utxo 0 ~/rutabaga_output_ledger ~/rutabaga_spent_ledger ~/rutabaga_keys recipient_addr 5
+```
