@@ -1,7 +1,7 @@
 pub mod coin;
 pub mod output_ledger;
 pub mod spent_ledger;
-//pub mod transaction_builder;
+pub mod transaction_builder;
 
 #[cfg(test)]
 mod tests {
