@@ -6,6 +6,12 @@ use clap::Parser;
 use std::path::PathBuf;
 use std::{fs, io::Write};
 use rutabaga::output_ledger;
+use bitcoin::{OutPoint, Sequence, ScriptBuf, Transaction, TxIn, TxOut, Witness};
+use bitcoin::transaction::Version;
+use bitcoin::absolute::LockTime;
+use std::str::FromStr;
+//use bitcoin::{Address, Network};
+//use bitcoin::address::{NetworkUnchecked, NetworkChecked};
 
 #[derive(clap::Parser)]
 #[command(author, version, about, long_about = None)]
@@ -32,8 +38,34 @@ enum WalletCmd {
     /// TODO
     PrintKeysFromKeysFile { path: PathBuf },
     /// TODO
-    PrintLedger { path: PathBuf }
+    PrintLedger { path: PathBuf },
+    /// TODO
+    SpendOutput { index: usize, path: PathBuf, addr: String}
 }
+
+fn build_tx(outpoint: OutPoint, tx_out: &TxOut, recipient: ScriptBuf) -> Transaction {
+    let input = TxIn {
+        previous_output: outpoint,
+        script_sig: ScriptBuf::new(),
+        sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+        witness: Witness::new()
+    };
+
+    let fee = bitcoin::Amount::from_sat(100);
+    let output = TxOut {
+        value: tx_out.value - fee,
+        script_pubkey: recipient 
+    };
+
+    Transaction {
+        version: Version::TWO,
+        lock_time: LockTime::ZERO,
+        input: vec![input],
+        output: vec![output]
+    }
+}
+
+use esplora_client::Builder;
 
 fn main() {
     let cli = Args::parse();
@@ -76,6 +108,17 @@ fn main() {
                 println!("output: {}", i);
                 println!("{:#?}", output);
             }
+        }
+        Commands::Wallet(WalletCmd::SpendOutput { index, path, addr }) => {
+            let outs = output_ledger::read(&path); 
+            let (outpoint, ref output) = outs[index];
+            let address: Address = Address::from_str(&addr).unwrap()
+               .require_network(Network::Signet).unwrap();
+            let tx = build_tx(outpoint, output, address.script_pubkey());
+            let builder = Builder::new(&Network::Signet.to_string());
+            let blocking_client = builder.build_blocking();
+            let response = blocking_client.broadcast(&tx).unwrap();
+            println!("{:#?}", response);
         }
     }
 }
