@@ -1,13 +1,17 @@
 use bitcoin::key::Keypair;
 use bitcoin::secp256k1::rand;
 use bitcoin::secp256k1::{Secp256k1, SecretKey};
-use bitcoin::{Address, Amount, Network};
+use bitcoin::{Address, Amount, FeeRate, Network};
 use clap::Parser;
+use esplora_client::Builder;
 use rutabaga::coin::from_ledger;
+use rutabaga::transaction_builder::build;
 use rutabaga::{output_ledger, spent_ledger};
 use std::collections::HashSet;
+use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
-use std::{fs, io::Write};
+use std::str::FromStr;
 
 #[derive(clap::Parser)]
 #[command(author, version, about, long_about = None)]
@@ -41,6 +45,15 @@ enum WalletCmd {
     PrintSpentOutputs { path: PathBuf },
     /// TODO
     PrintBalance { output_ledger: PathBuf, spent_ledger: PathBuf },
+    /// TODO
+    SpendUtxo {
+        index: usize,
+        outs_ledger: PathBuf,
+        spent_ledger: PathBuf,
+        keys_path: PathBuf,
+        addr: String,
+        fee_rate: u32,
+    },
 }
 
 fn main() {
@@ -117,6 +130,31 @@ fn main() {
                 println!("{:?}", addr);
             }
             println!("ledger balance: {:?}", balance);
+        }
+        Commands::Wallet(WalletCmd::SpendUtxo {
+            index,
+            outs_ledger,
+            spent_ledger,
+            keys_path,
+            addr,
+            fee_rate,
+        }) => {
+            let s = Secp256k1::new();
+            let bytes: Vec<u8> = fs::read(&keys_path).unwrap();
+            let sk = SecretKey::from_slice(&bytes).unwrap();
+            let kp = Keypair::from_secret_key(&s, &sk);
+            let bitcoin_fee_rate = FeeRate::from_sat_per_vb_u32(fee_rate);
+
+            let coins = from_ledger(&outs_ledger, &spent_ledger);
+            let coin = coins[index].clone();
+
+            let address: Address =
+                Address::from_str(&addr).unwrap().require_network(Network::Signet).unwrap();
+            let tx = build(&coin, &address.script_pubkey(), kp, bitcoin_fee_rate).unwrap();
+            let builder = Builder::new("https://blockstream.info/signet/api");
+            let blocking_client = builder.build_blocking();
+            let response = blocking_client.broadcast(&tx).unwrap();
+            println!("{:#?}", response);
         }
     }
 }
