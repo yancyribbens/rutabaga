@@ -24,3 +24,10 @@ show ledger balance
 ```
 cargo run --bin cli wallet print-ledger ~/rutabaga_output_ledger
 ```
+
+# transaction
+
+spend output 0
+```
+cargo run --bin cli wallet spend-output 0 ~/rutabaga_output_ledger ~/rutabaga_keys recipient_addr
+```
