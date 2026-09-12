@@ -65,13 +65,15 @@ fn main() {
         }
         Commands::Wallet(WalletCmd::PrintLedger { path }) => {
             let outs = output_ledger::read(&path); 
-            println!("output count: {:?}", outs.len());
+            println!("count: {:?}", outs.len());
 
-            for out in outs {
+            for (i, out) in outs.into_iter().enumerate() {
                 let (outpoint, ref txout) = out;
                 let script_pubkey = &txout.script_pubkey;
                 let address = Address::from_script(script_pubkey, Network::Signet).unwrap();
                 let output = (outpoint, txout, address);
+                println!();
+                println!("output: {}", i);
                 println!("{:#?}", output);
             }
         }
