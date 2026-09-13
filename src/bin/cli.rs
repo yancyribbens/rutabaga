@@ -60,6 +60,15 @@ enum WalletCmd {
         addr: String,
         fee_rate: u32,
     },
+    /// TODO
+    SpendUtxos {
+        index_list: String,
+        outs_ledger: PathBuf,
+        spent_ledger: PathBuf,
+        keys_path: PathBuf,
+        addr: String,
+        fee_rate: u32,
+    },
 }
 
 fn main() {
@@ -159,13 +168,50 @@ fn main() {
 
             let coins = coin::from_ledger(&outs_ledger, &spent_ledger);
             let coin = coins[index].clone();
+            let coin_vec = vec![coin];
 
             let address: Address = Address::from_str(&addr)
                 .unwrap()
                 .require_network(Network::Signet)
                 .unwrap();
+            let tx = transaction_builder::build(
+                &coin_vec,
+                &address.script_pubkey(),
+                kp,
+                bitcoin_fee_rate,
+            )
+            .unwrap();
+            let builder = Builder::new("https://blockstream.info/signet/api");
+            let blocking_client = builder.build_blocking();
+            let response = blocking_client.broadcast(&tx).unwrap();
+            println!("{:#?}", response);
+        }
+        Commands::Wallet(WalletCmd::SpendUtxos {
+            index_list,
+            outs_ledger,
+            spent_ledger,
+            keys_path,
+            addr,
+            fee_rate,
+        }) => {
+            let s = Secp256k1::new();
+            let bytes: Vec<u8> = fs::read(&keys_path).unwrap();
+            let sk = SecretKey::from_slice(&bytes).unwrap();
+            let kp = Keypair::from_secret_key(&s, &sk);
+            let bitcoin_fee_rate = FeeRate::from_sat_per_vb_u32(fee_rate);
+
+            let coins = coin::from_ledger(&outs_ledger, &spent_ledger);
+            let outs: Vec<_> = index_list
+                .split(',')
+                .map(|i| i.parse::<usize>().unwrap())
+                .map(|i| coins[i].clone())
+                .collect();
+            let address: Address = Address::from_str(&addr)
+                .unwrap()
+                .require_network(Network::Signet)
+                .unwrap();
             let tx =
-                transaction_builder::build(&coin, &address.script_pubkey(), kp, bitcoin_fee_rate)
+                transaction_builder::build(&outs, &address.script_pubkey(), kp, bitcoin_fee_rate)
                     .unwrap();
             let builder = Builder::new("https://blockstream.info/signet/api");
             let blocking_client = builder.build_blocking();
