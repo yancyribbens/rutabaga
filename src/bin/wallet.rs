@@ -1,10 +1,11 @@
 use bitcoin::key::Keypair;
 use bitcoin::secp256k1::rand;
 use bitcoin::secp256k1::{Secp256k1, SecretKey};
-use bitcoin::{Address, Amount, FeeRate, Network};
+use bitcoin::{Address, Amount, FeeRate, Network, ScriptBuf};
 use clap::Parser;
 use esplora_client::Builder;
 use rutabaga::coin::from_ledger;
+use rutabaga::transaction_builder;
 use rutabaga::transaction_builder::build_without_change;
 use rutabaga::{output_ledger, spent_ledger};
 use std::collections::HashSet;
@@ -40,7 +41,27 @@ enum WalletCmd {
     PrintBalance { output_ledger: PathBuf, spent_ledger: PathBuf },
     /// Spend a UTXO given a comma separated list of indexes from the PrintUtxos command.
     SpendUtxo {
+        index: usize,
+        outs_ledger: PathBuf,
+        spent_ledger: PathBuf,
+        keys_path: PathBuf,
+        addr: String,
+        fee_rate: u32,
+    },
+    /// Spend multiple UTXOs given a comma separated value list of indexes from the PrintUtxos
+    /// command.
+    SpendUtxos {
         index_list: String,
+        outs_ledger: PathBuf,
+        spent_ledger: PathBuf,
+        keys_path: PathBuf,
+        addr: String,
+        fee_rate: u32,
+    },
+    /// Spend target amount to a given address.  The available balance must be enough to both
+    /// include the transaction fees and the target amount.
+    Spend {
+        amount: u64,
         outs_ledger: PathBuf,
         spent_ledger: PathBuf,
         keys_path: PathBuf,
@@ -124,7 +145,28 @@ fn main() {
             }
             println!("ledger balance: {:?}", balance);
         }
-        WalletCmd::SpendUtxo {
+        WalletCmd::SpendUtxo { index, outs_ledger, spent_ledger, keys_path, addr, fee_rate } => {
+            let s = Secp256k1::new();
+            let bytes: Vec<u8> = fs::read(&keys_path).unwrap();
+            let sk = SecretKey::from_slice(&bytes).unwrap();
+            let kp = Keypair::from_secret_key(&s, &sk);
+            let bitcoin_fee_rate = FeeRate::from_sat_per_vb_u32(fee_rate);
+
+            let coins = from_ledger(&outs_ledger, &spent_ledger);
+            let coin = coins[index].clone();
+            let coin_vec = vec![coin];
+
+            let address: Address =
+                Address::from_str(&addr).unwrap().require_network(Network::Signet).unwrap();
+            let tx =
+                build_without_change(&coin_vec, &address.script_pubkey(), kp, bitcoin_fee_rate)
+                    .unwrap();
+            let builder = Builder::new("https://blockstream.info/signet/api");
+            let blocking_client = builder.build_blocking();
+            let response = blocking_client.broadcast(&tx).unwrap();
+            println!("{:#?}", response);
+        }
+        WalletCmd::SpendUtxos {
             index_list,
             outs_ledger,
             spent_ledger,
@@ -153,6 +195,40 @@ fn main() {
             let blocking_client = builder.build_blocking();
             let response = blocking_client.broadcast(&tx).unwrap();
             println!("{:#?}", response);
+        }
+        WalletCmd::Spend { amount, outs_ledger, spent_ledger, keys_path, addr, fee_rate } => {
+            let bitcoin_fee_rate = FeeRate::from_sat_per_vb_u32(fee_rate);
+
+            let coins = from_ledger(&outs_ledger, &spent_ledger);
+            println!("{:#?}", coins);
+
+            let address: Address =
+                Address::from_str(&addr).unwrap().require_network(Network::Signet).unwrap();
+
+            let s = Secp256k1::new();
+            let bytes: Vec<u8> = fs::read(&keys_path).unwrap();
+            let sk = SecretKey::from_slice(&bytes).unwrap();
+            let kp = Keypair::from_secret_key(&s, &sk);
+            let sender_script_pub_key = ScriptBuf::new_p2tr(&s, kp.x_only_public_key().0, None);
+
+            let target = Amount::from_sat(amount);
+            let tx = transaction_builder::build_with_change_possible(
+                &coins,
+                target,
+                &address.script_pubkey(),
+                &sender_script_pub_key,
+                kp,
+                bitcoin_fee_rate,
+            );
+
+            if let Some(t) = tx {
+                let builder = Builder::new("https://blockstream.info/signet/api");
+                let blocking_client = builder.build_blocking();
+                let response = blocking_client.broadcast(&t).unwrap();
+                println!("{:#?}", response);
+            } else {
+                println!("unable to create a tx with the given parameters.");
+            }
         }
     }
 }
