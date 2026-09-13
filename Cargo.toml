@@ -8,6 +8,7 @@ bitcoin = { version = "0.32", features = ["arbitrary", "rand-std"] }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1.54", features = ["macros", "rt-multi-thread"] }
 esplora-client = { version = "0.13.0", features = ["blocking-https"] }
+bitcoin-coin-selection = { version = "0.9", features = ["rand"] }
 log = "0.4"
 env_logger = "0.11"
 
