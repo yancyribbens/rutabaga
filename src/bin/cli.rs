@@ -45,32 +45,37 @@ enum WalletCmd {
     /// TODO
     PrintLedger { path: PathBuf },
     /// TODO
-    SpendOutput { index: usize, ledger_path: PathBuf, keys_path: PathBuf, addr: String, fee_rate: u32 }
+    SpendOutput { index: usize, ledger_path: PathBuf, keys_path: PathBuf, addr: String, fee_rate: u32 },
+    /// TODO
+    SpendOutputs { index_list: String, ledger_path: PathBuf, keys_path: PathBuf, addr: String, fee_rate: u32 }
 }
 
 fn build_tx(
-    outpoint: OutPoint,
-    tx_out: &TxOut,
+    outs: Vec<(OutPoint, TxOut)>,
     recipient: ScriptBuf,
     kp: Keypair,
     fee_rate: FeeRate
 ) -> Transaction {
-    let input = TxIn {
-        previous_output: outpoint,
-        script_sig: ScriptBuf::new(),
-        sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
-        witness: Witness::default(),
-    };
+    let inputs = outs.iter().map(|(outpoint, _)|
+        TxIn {
+            previous_output: *outpoint,
+            script_sig: ScriptBuf::new(),
+            sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+            witness: Witness::default()
+        }).collect();
+
+    let prevouts: Vec<_> = outs.iter().map(|(_, tx_out)| tx_out).collect();
+    let value = prevouts.iter().map(|tx_out| tx_out.value).try_fold(Amount::ZERO, Amount::checked_add).unwrap();
 
     let output = TxOut {
-        value: tx_out.value,
+        value,
         script_pubkey: recipient.clone() 
     };
 
     let mut tx = Transaction {
         version: Version::TWO,
         lock_time: LockTime::ZERO,
-        input: vec![input],
+        input: inputs,
         output: vec![output]
     };
 
@@ -79,32 +84,29 @@ fn build_tx(
 
     // now that the fee is known, update the transaction to include a fee.
     let output = TxOut {
-        value: tx_out.value - fee,
+        value: value - fee,
         script_pubkey: recipient.clone() 
     };
     tx.output = vec![output];
 
-    // verifying the fee and the output is correct
-    assert_eq!(fee, FeeRate::fee_wu(fee_rate, tx.weight()).unwrap());
-    assert_eq!(tx.output[0].value, tx_out.value - fee);
-
-    let input_index = 0;
-    let sighash_type = TapSighashType::Default;
-    let prevouts = vec![tx_out];
-    let prevouts = Prevouts::All(&prevouts);
     let mut sighasher = SighashCache::new(&mut tx);
+    for (index, _) in outs.clone().into_iter().enumerate() {
+        let sighash_type = TapSighashType::Default;
+        //let prevouts = vec![tx_out];
+        let prevouts = Prevouts::All(&prevouts);
 
-    let sighash = sighasher
-        .taproot_key_spend_signature_hash(input_index, &prevouts, sighash_type)
-        .unwrap();
+        let sighash = sighasher
+            .taproot_key_spend_signature_hash(index, &prevouts, sighash_type)
+            .unwrap();
 
-    let s = Secp256k1::new();
-    let tweaked: TweakedKeypair = kp.tap_tweak(&s, None);
-    let msg = Message::from_digest(sighash.to_byte_array());
-    let signature = s.sign_schnorr(&msg, &tweaked.to_keypair());
+        let s = Secp256k1::new();
+        let tweaked: TweakedKeypair = kp.tap_tweak(&s, None);
+        let msg = Message::from_digest(sighash.to_byte_array());
+        let signature = s.sign_schnorr(&msg, &tweaked.to_keypair());
 
-    let signature = bitcoin::taproot::Signature { signature, sighash_type };
-    sighasher.witness_mut(input_index).unwrap().push(&signature.to_vec());
+        let signature = bitcoin::taproot::Signature { signature, sighash_type };
+        sighasher.witness_mut(index).unwrap().push(signature.to_vec());
+    }
     let tx = sighasher.into_transaction();
     tx.to_owned()
 }
@@ -160,9 +162,27 @@ fn main() {
 
             let outs = output_ledger::read(&ledger_path); 
             let (outpoint, ref output) = outs[index];
+            let out = vec![(outpoint, output.clone())];
             let address: Address = Address::from_str(&addr).unwrap()
                .require_network(Network::Signet).unwrap();
-            let tx = build_tx(outpoint, output, address.script_pubkey(), kp, bitcoin_fee_rate);
+            let tx = build_tx(out, address.script_pubkey(), kp, bitcoin_fee_rate);
+            let builder = Builder::new("https://blockstream.info/signet/api");
+            let blocking_client = builder.build_blocking();
+            let response = blocking_client.broadcast(&tx).unwrap();
+            println!("{:#?}", response);
+        }
+        Commands::Wallet(WalletCmd::SpendOutputs { index_list, ledger_path, keys_path, addr, fee_rate }) => {
+            let s = Secp256k1::new();
+            let bytes: Vec<u8> = fs::read(&keys_path).unwrap();
+            let sk = SecretKey::from_slice(&bytes).unwrap();
+            let kp = Keypair::from_secret_key(&s, &sk);
+            let bitcoin_fee_rate = FeeRate::from_sat_per_vb_u32(fee_rate);
+
+            let outs = output_ledger::read(&ledger_path); 
+            let outs: Vec<_> = index_list.split(',').map(|i| i.parse::<usize>().unwrap()).map(|i| outs[i].clone()).collect();
+            let address: Address = Address::from_str(&addr).unwrap()
+               .require_network(Network::Signet).unwrap();
+            let tx = build_tx(outs, address.script_pubkey(), kp, bitcoin_fee_rate);
             let builder = Builder::new("https://blockstream.info/signet/api");
             let blocking_client = builder.build_blocking();
             let response = blocking_client.broadcast(&tx).unwrap();
