@@ -20,6 +20,14 @@ use bitcoinkernel::core::ScriptPubkeyExt;
 use std::fs;
 use bitcoinkernel::TransactionRef;
 use std::env;
+use bitcoinkernel::core::TxInExt;
+
+use bitcoin::{OutPoint, TxOut};
+use bitcoinkernel::core::TxOutPointExt;
+use bitcoinkernel::core::TxidExt;
+
+use bitcoin::hashes::Hash;
+
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -94,6 +102,28 @@ impl Wallet {
         ret
     }
 
+    pub fn outpoint_grep(stored_outs: Vec<(OutPoint, TxOut)>, block: &bitcoinkernel::Block) -> Vec<OutPoint> {
+        let stored_outpoints: Vec<_> = stored_outs.iter().map(|(outpoint, _)| *outpoint).collect();
+        let mut spent_outs = vec![];
+
+        for tx in block.transactions().skip(1) {
+            for input in tx.inputs() {
+                let outpoint = input.outpoint();
+                let vout = outpoint.index();
+                let txid = outpoint.txid();
+
+                let txid = bitcoin::Txid::from_byte_array(txid.to_bytes()); 
+                let bitcoin_outpoint = bitcoin::OutPoint { txid, vout };
+
+                if stored_outpoints.contains(&bitcoin_outpoint) {
+                    spent_outs.push(bitcoin_outpoint);
+                }
+            }
+        }
+
+        spent_outs
+    }
+
     pub fn scan_block(
         &mut self,
         kernel_block: bitcoinkernel::Block,
@@ -105,8 +135,18 @@ impl Wallet {
 
         let ledger_file = env::var("RUTABAGA_LEDGER_FILE")
             .expect("ledger file RUTABAGA_LEDGER_FILE should be set in env before running");
+
+        let spent_file = env::var("RUTABAGA_SPENT_FILE")
+            .expect("ledger file RUTABAGA_LEDGER_FILE should be set in env before running");
         let path = std::path::Path::new(&ledger_file);
         output_ledger::append(path, outs);
+
+        let ledger = output_ledger::read(path);
+        let spent_outs = Self::outpoint_grep(ledger, &kernel_block);
+
+        let spent_path = std::path::Path::new(&spent_file);
+        output_ledger::append_spent(spent_path, spent_outs);
+
         0
     }
     

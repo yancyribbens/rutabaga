@@ -1,6 +1,7 @@
 use std::io::Write;
 use std::path::Path;
 use std::fs;
+use std::fs::File;
 use bitcoin::hashes::Hash;
 use bitcoin::OutPoint;
 use bitcoin::TxOut;
@@ -72,14 +73,32 @@ fn to_entry<'a>(index: usize, tx_ref: TransactionRef<'a>) -> [u8; ENTRY_SIZE] {
 
 // append a list of entries to file
 pub fn append<'a>(path: &Path, outs: Vec<(usize, TransactionRef<'a>)>) {
-    let mut file = fs::File::options()
+    let mut file = File::options()
         .append(true)
         .create(true)
         .open(path).unwrap();
 
     outs.into_iter().for_each(|(i, tx_ref)| {
         file.write_all(&to_entry(i, tx_ref)).unwrap()
-    })
+    });
+}
+
+// append a list of entries to file
+pub fn append_spent(path: &Path, outs: Vec<OutPoint>) {
+    let mut file = File::options()
+        .append(true)
+        .create(true)
+        .open(path).unwrap();
+
+    outs.into_iter().for_each(|outpoint| {
+        let mut buf = [0; 36];
+        let tx_id = outpoint.txid.to_byte_array();
+        let vout = outpoint.vout.to_le_bytes();
+
+        buf[0..32].copy_from_slice(&tx_id);
+        buf[32..32 + 4].copy_from_slice(&vout);
+        file.write_all(&buf).unwrap()
+    });
 }
 
 // read a list of entries from file
@@ -90,6 +109,17 @@ pub fn read(path: &Path) -> Vec<(OutPoint, TxOut)>{
         let curr = i * ENTRY_SIZE;
         let next = (i * ENTRY_SIZE) + ENTRY_SIZE;
         read_outs(&bytes[curr..next])
+    }).collect()
+}
+
+// read a list of entries from file
+pub fn read_spent(path: &Path) -> Vec<OutPoint>{
+    let bytes = fs::read(path).unwrap();
+    let spent_count = bytes.len() / 36;
+    (0..spent_count).map(|i| {
+        let curr = i * 36;
+        let next = (i * 36) + 36;
+        read_outpoint(&bytes[curr..next])
     }).collect()
 }
 

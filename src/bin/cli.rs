@@ -43,7 +43,7 @@ enum WalletCmd {
     /// TODO
     PrintKeysFromKeysFile { path: PathBuf },
     /// TODO
-    PrintLedger { path: PathBuf },
+    PrintLedger { output_ledger: PathBuf, spent_ledger: PathBuf },
     /// TODO
     SpendOutput { index: usize, ledger_path: PathBuf, keys_path: PathBuf, addr: String, fee_rate: u32 },
     /// TODO
@@ -139,18 +139,23 @@ fn main() {
             println!("{:?}", address);
             println!("{}", kp.secret_key().display_secret());
         }
-        Commands::Wallet(WalletCmd::PrintLedger { path }) => {
-            let outs = output_ledger::read(&path); 
-            println!("count: {:?}", outs.len());
+        Commands::Wallet(WalletCmd::PrintLedger { output_ledger, spent_ledger }) => {
+            let outs = output_ledger::read(&output_ledger); 
+            let spent_outpoints = output_ledger::read_spent(&spent_ledger);
+            println!("outputs: {:?}", outs.len());
+            println!("spent outputs: {:?}", spent_outpoints.len());
 
             for (i, out) in outs.into_iter().enumerate() {
                 let (outpoint, ref txout) = out;
-                let script_pubkey = &txout.script_pubkey;
-                let address = Address::from_script(script_pubkey, Network::Signet).unwrap();
-                let output = (outpoint, txout, address);
-                println!();
-                println!("output: {}", i);
-                println!("{:#?}", output);
+
+                if !spent_outpoints.contains(&outpoint) {
+                    let script_pubkey = &txout.script_pubkey;
+                    let address = Address::from_script(script_pubkey, Network::Signet).unwrap();
+                    let output = (outpoint, txout, address);
+                    println!();
+                    println!("output: {}", i);
+                    println!("{:#?}", output);
+                }
             }
         }
         Commands::Wallet(WalletCmd::SpendOutput { index, ledger_path, keys_path, addr, fee_rate }) => {
