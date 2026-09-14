@@ -9,6 +9,7 @@ use bitcoinkernel::core::TxOutExt;
 use bitcoinkernel::core::TxidExt;
 use bitcoinkernel::TransactionRef;
 use std::fs;
+use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
@@ -74,14 +75,14 @@ fn to_entry<'a>(index: usize, tx_ref: TransactionRef<'a>) -> [u8; ENTRY_SIZE] {
 
 // append a list of entries to file
 pub fn append<'a>(path: &Path, outs: Vec<(usize, TransactionRef<'a>)>) {
-    let mut file = fs::File::options()
+    let mut file = File::options()
         .append(true)
         .create(true)
         .open(path)
         .unwrap();
 
     outs.into_iter()
-        .for_each(|(i, tx_ref)| file.write_all(&to_entry(i, tx_ref)).unwrap())
+        .for_each(|(i, tx_ref)| file.write_all(&to_entry(i, tx_ref)).unwrap());
 }
 
 // read a list of entries from file
@@ -150,33 +151,34 @@ mod tests {
     use bitcoinkernel::Transaction;
     use tempfile;
 
-    fn get_transaction(file: &str) -> Transaction {
-        let file = format!("tests/transaction_{file}.bin");
-        let tx_data = fs::read(file).unwrap();
-        Transaction::new(&tx_data).unwrap()
-    }
+    use crate::tests::get_transaction;
 
-    fn outs_from_tx(tx: &Transaction) -> Vec<(usize, TransactionRef<'_>)> {
+    pub fn outs_from_tx(tx: &Transaction) -> Vec<(usize, TransactionRef<'_>)> {
         let tx_ref = tx.as_ref();
         vec![(1, tx_ref)]
     }
 
-    #[test]
-    fn read_tx() {
+    pub fn outs_file(tx_2462: &Transaction, tx_8926: &Transaction) -> Vec<(OutPoint, TxOut)>{
         let dir = tempfile::tempdir().unwrap();
         let file_path = dir.path().join("outputs");
 
-        let tx_2462 = get_transaction("2462");
         let outs = outs_from_tx(&tx_2462);
         append(&file_path, outs);
 
-        let tx_8926 = get_transaction("8926");
         let outs = outs_from_tx(&tx_8926);
         append(&file_path, outs);
 
         let outs = read(&file_path);
         assert_eq!(outs.len(), 2);
+        outs
+    }
 
+    #[test]
+    fn read_tx() {
+        let tx_2462 = tests::get_transaction("2462");
+        let tx_8926 = tests::get_transaction("8926");
+
+        let outs = outs_file(&tx_2462, &tx_8926);
         let out = &outs[0];
         let (outpoint, output) = out;
         assert_eq!(outpoint.txid.to_byte_array(), tx_2462.txid().to_bytes());

@@ -15,14 +15,14 @@ cargo run --bin cli wallet print-keys-from-keys-file ~/rutabaga_key
 
 run node with wallet env vars
 ```
-RUTABAGA_KEY_FILE=~/rutabaga_keys RUTABAGA_LEDGER_FILE=~/rutabaga_output_ledger cargo run --bin node --release -- --network signet
+RUTABAGA_KEY_FILE=~/rutabaga_keys RUTABAGA_LEDGER_FILE=~/rutabaga_output_ledger RUTABAGA_SPENT_FILE=~/rutabaga_spent_ledger cargo run --bin node --release -- --network signet
 ```
 
 # ledger
 
 show ledger balance
 ```
-cargo run --bin cli wallet print-ledger ~/rutabaga_output_ledger
+cargo run --bin cli wallet print-ledger ~/rutabaga_output_ledger ~/rutabaga_spent_ledger
 ```
 
 # transaction

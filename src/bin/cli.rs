@@ -13,10 +13,11 @@ use bitcoin::{Address, Network};
 use bitcoin::{Amount, FeeRate, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness};
 use clap::Parser;
 use esplora_client::Builder;
-use rutabaga::output_ledger;
+use rutabaga::{output_ledger, spent_ledger};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{fs, io::Write};
+use rutabaga::utxos;
 
 #[derive(clap::Parser)]
 #[command(author, version, about, long_about = None)]
@@ -43,7 +44,10 @@ enum WalletCmd {
     /// TODO
     PrintKeysFromKeysFile { path: PathBuf },
     /// TODO
-    PrintLedger { path: PathBuf },
+    PrintLedger {
+        output_ledger: PathBuf,
+        spent_ledger: PathBuf,
+    },
     /// TODO
     SpendOutput {
         index: usize,
@@ -163,18 +167,19 @@ fn main() {
             println!("{:?}", address);
             println!("{}", kp.secret_key().display_secret());
         }
-        Commands::Wallet(WalletCmd::PrintLedger { path }) => {
-            let outs = output_ledger::read(&path);
-            println!("count: {:?}", outs.len());
+        Commands::Wallet(WalletCmd::PrintLedger {
+            output_ledger,
+            spent_ledger,
+        }) => {
+            let outs = output_ledger::read(&output_ledger);
+            let spent_outpoints = spent_ledger::read(&spent_ledger);
+            println!("outputs: {:?}", outs.len());
+            println!("spent outputs: {:?}", spent_outpoints.len());
+            let utxos = utxos(outs, spent_outpoints);
 
-            for (i, out) in outs.into_iter().enumerate() {
-                let (outpoint, ref txout) = out;
-                let script_pubkey = &txout.script_pubkey;
-                let address = Address::from_script(script_pubkey, Network::Signet).unwrap();
-                let output = (outpoint, txout, address);
-                println!();
-                println!("output: {}", i);
-                println!("{:#?}", output);
+            for (i, u) in utxos.iter().enumerate() {
+                println!("");
+                println!("{}: {:#?}", i, u);
             }
         }
         Commands::Wallet(WalletCmd::SpendOutput {
