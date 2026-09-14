@@ -39,3 +39,8 @@ show ledger spent outputs
 ```
 cargo run --bin cli wallet print-spent-outputs ~/rutabaga_spent_ledger
 ```
+
+show ledger UTXOs
+```
+cargo run --bin cli wallet print-utxos ~/rutabaga_output_ledger ~/rutabaga_spent_ledger
+```
