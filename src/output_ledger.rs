@@ -128,35 +128,22 @@ fn read_outs(bytes: &[u8]) -> (OutPoint, TxOut) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoinkernel::Transaction;
     use tempfile;
 
-    fn get_transaction(file: &str) -> Transaction {
-        let file = format!("tests/transaction_{file}.bin");
-        let tx_data = fs::read(file).unwrap();
-        Transaction::new(&tx_data).unwrap()
-    }
-
-    fn outs_from_tx(tx: &Transaction) -> Vec<(usize, TransactionRef<'_>)> {
-        let tx_ref = tx.as_ref();
-        vec![(1, tx_ref)]
-    }
+    use crate::tests::get_transaction;
+    use crate::tests::write_tx_outs_to_file;
 
     #[test]
     fn read_tx() {
+        let tx_2462 = tests::get_transaction("2462");
+        let tx_8926 = tests::get_transaction("8926");
+
         let dir = tempfile::tempdir().unwrap();
-        let file_path = dir.path().join("outputs");
+        let outs_path = dir.path().join("outputs");
 
-        let tx_2462 = get_transaction("2462");
-        let outs = outs_from_tx(&tx_2462);
-        append(&file_path, outs);
-
-        let tx_8926 = get_transaction("8926");
-        let outs = outs_from_tx(&tx_8926);
-        append(&file_path, outs);
-
-        let outs = read(&file_path);
-        assert_eq!(outs.len(), 2);
+        write_tx_outs_to_file(&tx_2462, &outs_path);
+        write_tx_outs_to_file(&tx_8926, &outs_path);
+        let outs = read(&outs_path);
 
         let out = &outs[0];
         let (outpoint, output) = out;
