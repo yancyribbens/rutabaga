@@ -64,6 +64,14 @@ enum WalletCmd {
         addr: String,
         fee_rate: u32,
     },
+    /// TODO
+    Spend {
+        amount: u64,
+        ledger_path: PathBuf,
+        keys_path: PathBuf,
+        addr: String,
+        fee_rate: u32,
+    }
 }
 
 fn build_tx(
@@ -236,6 +244,35 @@ fn main() {
             let blocking_client = builder.build_blocking();
             let response = blocking_client.broadcast(&tx).unwrap();
             println!("{:#?}", response);
+        }
+        Commands::Wallet(WalletCmd::Spend {
+            amount,
+            ledger_path,
+            keys_path,
+            addr,
+            fee_rate,
+        }) => {
+            //let s = Secp256k1::new();
+            //let bytes: Vec<u8> = fs::read(&keys_path).unwrap();
+            //let sk = SecretKey::from_slice(&bytes).unwrap();
+            //let kp = Keypair::from_secret_key(&s, &sk);
+            //let bitcoin_fee_rate = FeeRate::from_sat_per_vb_u32(fee_rate);
+
+            let outs = output_ledger::read(&ledger_path);
+            //let outs: Vec<_> = index_list
+                //.split(',')
+                //.map(|i| i.parse::<usize>().unwrap())
+                //.map(|i| outs[i].clone())
+                //.collect();
+            //let address: Address = Address::from_str(&addr)
+                //.unwrap()
+                //.require_network(Network::Signet)
+                //.unwrap();
+            //let tx = build_tx(outs, address.script_pubkey(), kp, bitcoin_fee_rate);
+            //let builder = Builder::new("https://blockstream.info/signet/api");
+            //let blocking_client = builder.build_blocking();
+            //let response = blocking_client.broadcast(&tx).unwrap();
+            //println!("{:#?}", response);
         }
     }
 }
