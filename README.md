@@ -61,3 +61,8 @@ spend output 0,1,2 at 5 sats/vB
 ```
 cargo run --bin cli wallet spend-utxos 0,1,2 ~/rutabaga_output_ledger ~/rutabaga_spent_ledger ~/rutabaga_keys recipient_addr 5
 ```
+
+spend 3100 sats at 5 sats/vB using automatic coin-selection
+```
+cargo run --bin cli wallet spend 3100 ~/rutabaga_output_ledger ~/rutabaga_spent_ledger ~/rutabaga_keys recipient_addr 5
+```
