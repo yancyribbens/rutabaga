@@ -3,7 +3,8 @@
 //! A Coin is that which has a UTXO (a TxOut which is unspent) and an OutPoint
 //! with which to spend in the future
 
-use bitcoin::{OutPoint, TxOut};
+use bitcoin::{Amount, OutPoint, TxOut, Weight};
+use bitcoin_coin_selection::WeightedUtxo;
 use std::path::Path;
 
 use crate::{output_ledger, spent_ledger};
@@ -12,6 +13,19 @@ use crate::{output_ledger, spent_ledger};
 pub struct Coin {
     pub outpoint: OutPoint,
     pub tx_out: TxOut,
+}
+
+impl WeightedUtxo for Coin {
+    fn satisfaction_weight(&self) -> Weight {
+        // see rust-bitcoin InputWeightPrediction P2TR_KEY_DEFAULT_SIGHASH
+        // for full calculation, see InputWeightPrediction::from_slice()
+        // 1 witness_len + 1 item len +  64 signature
+        Weight::from_wu(66)
+    }
+
+    fn value(&self) -> Amount {
+        self.tx_out.value
+    }
 }
 
 pub fn from_ledger(outs_ledger: &Path, spent_ledger: &Path) -> Vec<Coin> {

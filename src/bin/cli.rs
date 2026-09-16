@@ -7,7 +7,7 @@ use bitcoin::sighash::{Prevouts, SighashCache};
 use bitcoin::transaction::Version;
 use bitcoin::{
     Address, Amount, FeeRate, Network, ScriptBuf, Sequence, TapSighashType, Transaction, TxIn,
-    TxOut, Witness,
+    TxOut, Weight, Witness,
 };
 use clap::Parser;
 use esplora_client::Builder;
@@ -19,6 +19,8 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
+
+use bitcoin_coin_selection::select_coins;
 
 #[derive(clap::Parser)]
 #[command(author, version, about, long_about = None)]
@@ -64,6 +66,15 @@ enum WalletCmd {
     /// TODO
     SpendUtxos {
         index_list: String,
+        outs_ledger: PathBuf,
+        spent_ledger: PathBuf,
+        keys_path: PathBuf,
+        addr: String,
+        fee_rate: u32,
+    },
+    /// TODO
+    Spend {
+        amount: u64,
         outs_ledger: PathBuf,
         spent_ledger: PathBuf,
         keys_path: PathBuf,
@@ -125,6 +136,38 @@ fn build_tx(coins: Vec<Coin>, recipient: ScriptBuf, kp: Keypair, fee_rate: FeeRa
     }
     let tx = sighasher.into_transaction();
     tx.to_owned()
+}
+
+const DEFAULT_DISCARD_FEE_RATE: FeeRate = FeeRate::from_sat_per_vb_u32(10);
+const DEFAULT_LONG_TERM_FEE_RATE: FeeRate = FeeRate::from_sat_per_vb_u32(10);
+
+// 32 byte txid, 4 byte output index, 1 byte scriptSig, and 4 byte sequence
+const BASE_WEIGHT: Weight = Weight::from_vb_unwrap(32 + 4 + 1 + 4);
+
+// cost of change is the cost to create a change output plus the estimated cost to spend it as
+// input.
+//
+// therefore, cost_of_change =
+//      (change output size * fee rate) +
+//      (change spend size * discard fee rate)
+//
+// The change output size of a TR output is 57.5 vB (230 wu)
+// The change spend size is its input size in a future transaction, 43 vB (172 wu)
+// Therefore, the total size estimate is 100.5 vB or 402 wu
+//
+// params
+//  * fee_rate - current effective fee rate.
+//  * discard_fee_rate - target fee rate is fee rate with which output will not be a dust output.
+//    ref: core PR# 10817
+fn default_tr_cost_of_change(fee_rate: FeeRate, discard_fee_rate: FeeRate) -> Amount {
+    // output_size is 57.5 vB
+    // the base_weight is 164 wu while the P2TR key-path is 66 WU totaling 230 WU
+    let change_spend_size = BASE_WEIGHT + Weight::from_wu(66);
+    let change_output_size = Weight::from_vb_unchecked(43);
+
+    let change_fee = fee_rate * change_output_size;
+    let min_viable_change = discard_fee_rate * change_spend_size;
+    min_viable_change + change_fee
 }
 
 fn main() {
@@ -257,6 +300,40 @@ fn main() {
             let address: Address =
                 Address::from_str(&addr).unwrap().require_network(Network::Signet).unwrap();
             let tx = build_tx(outs, address.script_pubkey(), kp, bitcoin_fee_rate);
+            let builder = Builder::new("https://blockstream.info/signet/api");
+            let blocking_client = builder.build_blocking();
+            let response = blocking_client.broadcast(&tx).unwrap();
+            println!("{:#?}", response);
+        }
+        Commands::Wallet(WalletCmd::Spend {
+            amount,
+            outs_ledger,
+            spent_ledger,
+            keys_path,
+            addr,
+            fee_rate,
+        }) => {
+            let bitcoin_amount = Amount::from_sat(amount);
+            let bitcoin_fee_rate = FeeRate::from_sat_per_vb_u32(fee_rate);
+            let discard_fee_rate = DEFAULT_DISCARD_FEE_RATE;
+            let lt_fee_rate = DEFAULT_LONG_TERM_FEE_RATE;
+
+            let coins = coin::from_ledger(&outs_ledger, &spent_ledger);
+            let cost_of_change = default_tr_cost_of_change(bitcoin_fee_rate, discard_fee_rate);
+
+            let (_, selection) =
+                select_coins(bitcoin_amount, cost_of_change, bitcoin_fee_rate, lt_fee_rate, &coins)
+                    .unwrap();
+            let to_spend = selection.into_iter().cloned().collect();
+            let address: Address =
+                Address::from_str(&addr).unwrap().require_network(Network::Signet).unwrap();
+
+            let s = Secp256k1::new();
+            let bytes: Vec<u8> = fs::read(&keys_path).unwrap();
+            let sk = SecretKey::from_slice(&bytes).unwrap();
+            let kp = Keypair::from_secret_key(&s, &sk);
+
+            let tx = build_tx(to_spend, address.script_pubkey(), kp, bitcoin_fee_rate);
             let builder = Builder::new("https://blockstream.info/signet/api");
             let blocking_client = builder.build_blocking();
             let response = blocking_client.broadcast(&tx).unwrap();
