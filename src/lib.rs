@@ -20,17 +20,93 @@ mod tests {
     use std::fs;
     use bitcoinkernel::Transaction;
     use bitcoinkernel::TransactionRef;
+    use bitcoinkernel::core::TransactionExt;
+    use bitcoinkernel::core::TxInExt;
+    use bitcoinkernel::core::TxOutPointExt;
     use bitcoin::OutPoint;
     use bitcoin::TxOut;
+    use bitcoin::hashes::Hash;
+    use bitcoinkernel::core::TxidExt;
     use crate::output_ledger::{append, read};
 
     use arbtest::arbtest;
     use arbtest::arbitrary::Arbitrary;
 
+    use crate::{output_ledger, spent_ledger, utxos_from_ledger};
+
     pub fn get_transaction(file: &str) -> Transaction {
         let file = format!("tests/transaction_{file}.bin");
         let tx_data = fs::read(file).unwrap();
         Transaction::new(&tx_data).unwrap()
+    }
+
+    pub fn outs_from_tx(tx: &Transaction) -> Vec<(usize, TransactionRef<'_>)> {
+        let tx_ref = tx.as_ref();
+        vec![(1, tx_ref)]
+    }
+
+    pub fn outs_file(tx_2462: &Transaction, tx_8926: &Transaction) -> Vec<(OutPoint, TxOut)>{
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("outputs");
+
+        let outs = outs_from_tx(&tx_2462);
+        append(&file_path, outs);
+
+        let outs = outs_from_tx(&tx_8926);
+        append(&file_path, outs);
+
+        let outs = read(&file_path);
+        assert_eq!(outs.len(), 2);
+        outs
+    }
+
+    fn outpoints_from_tx(tx: &Transaction) -> Vec<OutPoint> {
+        tx.inputs()
+            .map(|i| {
+                let outpoint = i.outpoint();
+                let vout = outpoint.index();
+                let txid = outpoint.txid();
+                let txid = bitcoin::Txid::from_byte_array(txid.to_bytes());
+                bitcoin::OutPoint { txid, vout }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn read_utxos_from_ledger() {
+        let dir = tempfile::tempdir().unwrap();
+        let spent_ledger = dir.path().join("spent_outpoints");
+
+        let tx_2462 = get_transaction("2462");
+        let outpoints = outpoints_from_tx(&tx_2462);
+        spent_ledger::append(&spent_ledger, outpoints);
+
+        let tx_8926 = get_transaction("8926");
+        let outpoints = outpoints_from_tx(&tx_8926);
+        spent_ledger::append(&spent_ledger, outpoints);
+
+
+        let dir = tempfile::tempdir().unwrap();
+        let outs_ledger = dir.path().join("outputs");
+
+        let outs = outs_from_tx(&tx_2462);
+        output_ledger::append(&outs_ledger, outs);
+
+        let outs = outs_from_tx(&tx_8926);
+        output_ledger::append(&outs_ledger, outs);
+
+        let utxos = utxos_from_ledger(outs_ledger.as_path(), spent_ledger.as_path());
+        println!("{:?}", utxos.len());
+        
+        // TODO create a fixture file with a transaction that spends an out
+        // by create a rust-bitcoin tx: 
+        // https://docs.rs/bitcoin/latest/bitcoin/struct.Transaction.html
+        // then consensus decode and encode it into a kernel tx:
+        // https://docs.rs/bitcoin/latest/bitcoin/struct.Transaction.html
+        // then write that file as a fixture creating a third tx file
+
+        //let spent_outpoints = spent_ledger::read(&file_path);
+        //let outs = outs_file(&tx_2462, &tx_8926);
     }
 
     #[test]
