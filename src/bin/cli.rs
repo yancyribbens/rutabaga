@@ -13,11 +13,11 @@ use bitcoin::{Address, Network};
 use bitcoin::{Amount, FeeRate, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness};
 use clap::Parser;
 use esplora_client::Builder;
-use rutabaga::{output_ledger, spent_ledger};
+use rutabaga::output_ledger;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{fs, io::Write};
-use rutabaga::utxos;
+use rutabaga::utxos_from_ledger;
 
 #[derive(clap::Parser)]
 #[command(author, version, about, long_about = None)]
@@ -45,13 +45,14 @@ enum WalletCmd {
     PrintKeysFromKeysFile { path: PathBuf },
     /// TODO
     PrintLedger {
-        output_ledger: PathBuf,
+        outs_ledger: PathBuf,
         spent_ledger: PathBuf,
     },
     /// TODO
     SpendOutput {
         index: usize,
-        ledger_path: PathBuf,
+        outs_ledger: PathBuf,
+        spent_ledger: PathBuf,
         keys_path: PathBuf,
         addr: String,
         fee_rate: u32,
@@ -59,7 +60,8 @@ enum WalletCmd {
     /// TODO
     SpendOutputs {
         index_list: String,
-        ledger_path: PathBuf,
+        outs_ledger: PathBuf,
+        spent_ledger: PathBuf,
         keys_path: PathBuf,
         addr: String,
         fee_rate: u32,
@@ -176,14 +178,10 @@ fn main() {
             println!("{}", kp.secret_key().display_secret());
         }
         Commands::Wallet(WalletCmd::PrintLedger {
-            output_ledger,
+            outs_ledger,
             spent_ledger,
         }) => {
-            let outs = output_ledger::read(&output_ledger);
-            let spent_outpoints = spent_ledger::read(&spent_ledger);
-            println!("outputs: {:?}", outs.len());
-            println!("spent outputs: {:?}", spent_outpoints.len());
-            let utxos = utxos(outs, spent_outpoints);
+            let utxos = utxos_from_ledger(&outs_ledger, &spent_ledger);
 
             for (i, u) in utxos.iter().enumerate() {
                 println!("");
@@ -192,7 +190,8 @@ fn main() {
         }
         Commands::Wallet(WalletCmd::SpendOutput {
             index,
-            ledger_path,
+            outs_ledger,
+            spent_ledger,
             keys_path,
             addr,
             fee_rate,
@@ -203,8 +202,9 @@ fn main() {
             let kp = Keypair::from_secret_key(&s, &sk);
             let bitcoin_fee_rate = FeeRate::from_sat_per_vb_u32(fee_rate);
 
-            let outs = output_ledger::read(&ledger_path);
-            let (outpoint, ref output) = outs[index];
+            let utxos = utxos_from_ledger(&outs_ledger, &spent_ledger);
+
+            let (outpoint, ref output) = utxos[index];
             let out = vec![(outpoint, output.clone())];
             let address: Address = Address::from_str(&addr)
                 .unwrap()
@@ -218,7 +218,8 @@ fn main() {
         }
         Commands::Wallet(WalletCmd::SpendOutputs {
             index_list,
-            ledger_path,
+            outs_ledger,
+            spent_ledger,
             keys_path,
             addr,
             fee_rate,
@@ -229,11 +230,12 @@ fn main() {
             let kp = Keypair::from_secret_key(&s, &sk);
             let bitcoin_fee_rate = FeeRate::from_sat_per_vb_u32(fee_rate);
 
-            let outs = output_ledger::read(&ledger_path);
+            let utxos = utxos_from_ledger(&outs_ledger, &spent_ledger);
+
             let outs: Vec<_> = index_list
                 .split(',')
                 .map(|i| i.parse::<usize>().unwrap())
-                .map(|i| outs[i].clone())
+                .map(|i| utxos[i].clone())
                 .collect();
             let address: Address = Address::from_str(&addr)
                 .unwrap()

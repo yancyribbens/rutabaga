@@ -1,6 +1,13 @@
 pub mod output_ledger;
 pub mod spent_ledger;
 pub use bitcoin::{OutPoint, TxOut};
+use std::path::Path;
+
+pub fn utxos_from_ledger(outs_ledger: &Path, spent_ledger: &Path) -> Vec<(OutPoint, TxOut)> {
+    let outs = output_ledger::read(&outs_ledger);
+    let spent_outpoints = spent_ledger::read(&spent_ledger);
+    utxos(outs, spent_outpoints)
+}
 
 pub fn utxos(outs: Vec<(OutPoint, TxOut)>, spent_outputs: Vec<OutPoint>) -> Vec<(OutPoint, TxOut)> {
     outs.into_iter()
