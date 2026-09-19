@@ -23,8 +23,6 @@ mod tests {
     use bitcoinkernel::core::TransactionExt;
     use bitcoinkernel::core::TxInExt;
     use bitcoinkernel::core::TxOutPointExt;
-    use bitcoin::OutPoint;
-    use bitcoin::TxOut;
     use bitcoin::hashes::Hash;
     use bitcoinkernel::core::TxidExt;
     use crate::output_ledger::{append, read};
@@ -33,6 +31,12 @@ mod tests {
     use arbtest::arbitrary::Arbitrary;
 
     use crate::{output_ledger, spent_ledger, utxos_from_ledger};
+
+    use bitcoin::{OutPoint, ScriptBuf, Sequence, TxIn, TxOut, Witness};
+    use bitcoin::absolute::LockTime;
+    use bitcoin::transaction::Version;
+
+    use bitcoin::consensus::Encodable;
 
     pub fn get_transaction(file: &str) -> Transaction {
         let file = format!("tests/transaction_{file}.bin");
@@ -45,7 +49,7 @@ mod tests {
         vec![(1, tx_ref)]
     }
 
-    pub fn outs_file(tx_2462: &Transaction, tx_8926: &Transaction) -> Vec<(OutPoint, TxOut)>{
+    pub fn write_outs_file(tx_2462: &Transaction, tx_8926: &Transaction) -> Vec<(OutPoint, TxOut)>{
         let dir = tempfile::tempdir().unwrap();
         let file_path = dir.path().join("outputs");
 
@@ -74,30 +78,14 @@ mod tests {
 
     #[test]
     fn read_utxos_from_ledger() {
-        let dir = tempfile::tempdir().unwrap();
-        let spent_ledger = dir.path().join("spent_outpoints");
-
         let tx_2462 = get_transaction("2462");
-        let outpoints = outpoints_from_tx(&tx_2462);
-        spent_ledger::append(&spent_ledger, outpoints);
-
         let tx_8926 = get_transaction("8926");
-        let outpoints = outpoints_from_tx(&tx_8926);
-        spent_ledger::append(&spent_ledger, outpoints);
 
+        let tx_2250 = get_transaction("2250");
 
-        let dir = tempfile::tempdir().unwrap();
-        let outs_ledger = dir.path().join("outputs");
+        let outs = write_outs_file(&tx_2462, &tx_8926);
+        assert_eq!(2, outs.len());
 
-        let outs = outs_from_tx(&tx_2462);
-        output_ledger::append(&outs_ledger, outs);
-
-        let outs = outs_from_tx(&tx_8926);
-        output_ledger::append(&outs_ledger, outs);
-
-        let utxos = utxos_from_ledger(outs_ledger.as_path(), spent_ledger.as_path());
-        println!("{:?}", utxos.len());
-        
         // TODO create a fixture file with a transaction that spends an out
         // by create a rust-bitcoin tx: 
         // https://docs.rs/bitcoin/latest/bitcoin/struct.Transaction.html
@@ -105,8 +93,26 @@ mod tests {
         // https://docs.rs/bitcoin/latest/bitcoin/struct.Transaction.html
         // then write that file as a fixture creating a third tx file
 
-        //let spent_outpoints = spent_ledger::read(&file_path);
-        //let outs = outs_file(&tx_2462, &tx_8926);
+        //let tx_in = bitcoin::TxIn {
+            //previous_output: outs[0].0,
+            //script_sig: ScriptBuf::new(),
+            //sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+            //witness: Witness::default(),
+        //};
+
+        //let tx = bitcoin::Transaction {
+            //version: Version::TWO,
+            //lock_time: LockTime::from_height(0).unwrap_or(LockTime::ZERO),
+            //input: vec![tx_in],
+            //output: vec![],
+        //};
+
+        //let mut serialized_tx = Vec::new();
+        //let byte_count = tx.consensus_encode(&mut serialized_tx);
+
+        //let enc = bitcoinkernel::Transaction::new(&serialized_tx).unwrap(); 
+        //println!("id: {:?}", tx.txid());
+        //fs::write("/tmp/2250_transaction.bin", enc.consensus_encode().unwrap());
     }
 
     #[test]
