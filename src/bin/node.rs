@@ -2,6 +2,7 @@ const PROTOCOL_VERSION: u32 = 70015;
 
 use rutabaga::hash_tracker::HashTracker;
 use rutabaga::outs_file::OutsFile;
+use rutabaga::spent_file::SpentFile;
 
 use std::io::{BufReader, Write};
 use std::path::Path;
@@ -84,10 +85,12 @@ async fn connect(
     address: SocketAddr,
     spend_script: &ScriptBuf,
     outs_path: &Path,
+    spent_path: &Path,
     tracker_path: &Path,
 ) -> std::io::Result<()> {
-    let mut outs_file = OutsFile::new(outs_path);
     let mut hash_tracker = HashTracker::new(tracker_path);
+    let mut outs_file = OutsFile::new(outs_path);
+    let mut spent_file = SpentFile::new(spent_path);
 
     let version_message = build_version_message(address);
     let first_message = RawNetworkMessage::new(network.magic(), version_message);
@@ -126,6 +129,10 @@ async fn connect(
 
                             // write any of the keys and value
                             outs_file.append_entries(outs);
+
+                            // check if any of the outpoints are spent
+                            let spent_outs = outpoint_grep(outs_file.read(), block);
+                            spent_file.append_entries(spent_outs);
                         } else {
                             debug!(
                                 "ignoring block {} received out of order preceded by {}",
@@ -299,15 +306,21 @@ async fn main() -> std::io::Result<()> {
     paths.insert(str_outputs_path);
     let outputs_path = Path::new(&str_outputs_path);
 
-    if paths.len() < 3 {
+    let str_spent_path = &args[5];
+    paths.insert(str_spent_path);
+    let spent_path = Path::new(&str_spent_path);
+
+    if paths.len() < 4 {
         error!(
-            "Error paths are not unique: {:?} {:?} {:?}",
-            str_tracker_path, str_keys_path, str_outputs_path
+            "Error paths are not unique: {:?} {:?} {:?} {:?}",
+            str_tracker_path, str_keys_path, str_outputs_path, str_spent_path
         );
         process::exit(1);
     }
 
-    let _ = connect(Network::Signet, address, &spend_script, outputs_path, tracker_path).await;
+    let _ =
+        connect(Network::Signet, address, &spend_script, outputs_path, spent_path, tracker_path)
+            .await;
 
     Ok(())
 }

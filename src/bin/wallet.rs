@@ -1,4 +1,5 @@
 use rutabaga::outs_file::OutsFile;
+use rutabaga::spent_file::SpentFile;
 
 use bitcoin::key::Keypair;
 use bitcoin::secp256k1::rand;
@@ -27,6 +28,8 @@ enum WalletCmd {
     PrintKeysFromKeysFile { path: PathBuf },
     /// Print all outputs stored in file.
     PrintOutputs { outs_path: PathBuf },
+    /// Print spent outputs stored in file.
+    PrintSpentOutputs { spent_path: PathBuf },
 }
 
 fn main() {
@@ -64,6 +67,15 @@ fn main() {
             for out in outs {
                 println!();
                 println!("{:#?}", out);
+            }
+        }
+        WalletCmd::PrintSpentOutputs { spent_path } => {
+            let spent = SpentFile::new(&spent_path).read();
+            println!("count: {:?}", spent.len());
+
+            for s in spent {
+                println!();
+                println!("{:#?}", s);
             }
         }
     }

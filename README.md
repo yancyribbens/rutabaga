@@ -48,3 +48,8 @@ Show Outputs File
 ```
 cargo run --bin wallet print-outputs ~/rutabaga_output_file
 ```
+
+show ledger spent outputs
+```
+cargo run --bin wallet print-spent-outputs ~/rutabaga_spent_ledger
+```
