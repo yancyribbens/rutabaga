@@ -1,5 +1,6 @@
 pub mod hash_tracker;
 pub mod outs_file;
+pub mod spent_file;
 
 #[cfg(test)]
 mod tests {
