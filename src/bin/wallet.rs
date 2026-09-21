@@ -3,7 +3,7 @@ use bitcoin::secp256k1::rand;
 use bitcoin::secp256k1::{Secp256k1, SecretKey};
 use bitcoin::{Address, Network};
 use clap::Parser;
-use rutabaga::output_ledger;
+use rutabaga::{output_ledger, spent_ledger};
 use std::path::PathBuf;
 use std::{fs, io::Write};
 
@@ -26,6 +26,8 @@ enum WalletCmd {
     PrintKeysFromKeysFile { path: PathBuf },
     /// Print all outputs stored in file.
     PrintOutputs { path: PathBuf },
+    /// Print spent outputs stored in file.
+    PrintSpentOutputs { path: PathBuf },
 }
 
 fn main() {
@@ -63,6 +65,15 @@ fn main() {
             for out in outs {
                 println!();
                 println!("{:#?}", out);
+            }
+        }
+        WalletCmd::PrintSpentOutputs { path } => {
+            let spents = spent_ledger::read(&path);
+            println!("count: {:?}", spents.len());
+
+            for s in spents {
+                println!();
+                println!("{:#?}", s);
             }
         }
     }
