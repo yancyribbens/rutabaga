@@ -1,4 +1,5 @@
 pub mod output_ledger;
+pub mod spent_ledger;
 
 #[cfg(test)]
 mod tests {
