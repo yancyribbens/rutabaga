@@ -1,10 +1,11 @@
 use bitcoin::key::Keypair;
 use bitcoin::secp256k1::rand;
 use bitcoin::secp256k1::{Secp256k1, SecretKey};
-use bitcoin::{Address, Network};
+use bitcoin::{Address, Amount, Network};
 use clap::Parser;
-use rutabaga::coin::from_ledger;
+use rutabaga::coin;
 use rutabaga::{output_ledger, spent_ledger};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::{fs, io::Write};
 
@@ -41,6 +42,11 @@ enum WalletCmd {
     },
     /// TODO
     PrintSpentOutputs { path: PathBuf },
+    /// TODO
+    PrintBalance {
+        output_ledger: PathBuf,
+        spent_ledger: PathBuf,
+    },
 }
 
 fn main() {
@@ -84,7 +90,7 @@ fn main() {
             output_ledger,
             spent_ledger,
         }) => {
-            let coins = from_ledger(&output_ledger, &spent_ledger);
+            let coins = coin::from_ledger(&output_ledger, &spent_ledger);
 
             for (i, coin) in coins.iter().enumerate() {
                 let txout = coin.tx_out.clone();
@@ -105,6 +111,30 @@ fn main() {
                 println!();
                 println!("{:#?}", s);
             }
+        }
+        Commands::Wallet(WalletCmd::PrintBalance {
+            output_ledger,
+            spent_ledger,
+        }) => {
+            let coins = coin::from_ledger(&output_ledger, &spent_ledger);
+            let unique_addresses: Vec<_> = coins
+                .iter()
+                .map(|coin| {
+                    let script_pubkey = &coin.tx_out.script_pubkey;
+                    Address::from_script(script_pubkey, Network::Signet).unwrap()
+                })
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+
+            let balance: Amount = coins.iter().map(|coin| coin.tx_out.value).sum();
+
+            println!("UTXO count: {:?}", coins.len());
+            println!("address count: {:?}", unique_addresses.len());
+            for addr in unique_addresses {
+                println!("{:?}", addr);
+            }
+            println!("ledger balance: {:?}", balance);
         }
     }
 }
