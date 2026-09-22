@@ -44,3 +44,8 @@ show ledger UTXOs
 ```
 cargo run --bin wallet print-utxos ~/rutabaga_output_ledger ~/rutabaga_spent_ledger
 ```
+
+print balance
+```
+cargo run --bin wallet print-balance ~/rutabaga_output_ledger ~/rutabaga_spent_ledger
+```
