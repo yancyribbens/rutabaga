@@ -4,9 +4,10 @@ use rutabaga::spent_file::SpentFile;
 use bitcoin::key::Keypair;
 use bitcoin::secp256k1::rand;
 use bitcoin::secp256k1::{Secp256k1, SecretKey};
-use bitcoin::{Address, Network};
+use bitcoin::{Address, Amount, Network};
 use clap::Parser;
 use rutabaga::coin::from_outs;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::{fs, io::Write};
 
@@ -33,6 +34,8 @@ enum WalletCmd {
     PrintUtxos { outs_path: PathBuf, spent_path: PathBuf },
     /// Print spent outputs stored in file.
     PrintSpentOutputs { spent_path: PathBuf },
+    /// Print the value stored in all unspent outputs.
+    PrintBalance { outs_path: PathBuf, spent_path: PathBuf },
 }
 
 fn main() {
@@ -90,6 +93,29 @@ fn main() {
                 println!();
                 println!("{:#?}", s);
             }
+        }
+        WalletCmd::PrintBalance { outs_path, spent_path } => {
+            let outs_file = OutsFile::new(&outs_path).read();
+            let spent_outpoints = SpentFile::new(&spent_path).read();
+            let coins = from_outs(outs_file, spent_outpoints);
+            let unique_addresses: Vec<_> = coins
+                .iter()
+                .map(|coin| {
+                    let script_pubkey = &coin.tx_out.script_pubkey;
+                    Address::from_script(script_pubkey, Network::Signet).unwrap()
+                })
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+
+            let balance: Amount = coins.iter().map(|coin| coin.tx_out.value).sum();
+
+            println!("UTXO count: {:?}", coins.len());
+            println!("address count: {:?}", unique_addresses.len());
+            for addr in unique_addresses {
+                println!("{:?}", addr);
+            }
+            println!("ledger balance: {:?}", balance);
         }
     }
 }
