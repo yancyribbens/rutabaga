@@ -21,7 +21,7 @@ fn calc_fee(fee_rate: FeeRate, recipient: &ScriptBuf) -> Option<Amount> {
     FeeRate::fee_wu(fee_rate, predicted_tx_weight)
 }
 
-pub fn build(
+pub fn build_without_change(
     coins: &Vec<Coin>,
     recipient: &ScriptBuf,
     kp: Keypair,
@@ -85,6 +85,88 @@ pub fn build(
     Some(tx.to_owned())
 }
 
+pub fn build_with_change(
+    coins: &Vec<Coin>,
+    target: Amount,
+    recipient: ScriptBuf,
+    change_addr: ScriptBuf,
+    kp: Keypair,
+    fee_rate: FeeRate,
+) -> Transaction {
+    let inputs = coins
+        .iter()
+        .map(|coin| TxIn {
+            previous_output: coin.outpoint,
+            script_sig: ScriptBuf::new(),
+            sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+            witness: Witness::default(),
+        })
+        .collect();
+
+    let prevouts: Vec<_> = coins.iter().map(|coin| coin.tx_out.clone()).collect();
+    let value = prevouts
+        .iter()
+        .map(|tx_out| tx_out.value)
+        .try_fold(Amount::ZERO, Amount::checked_add)
+        .unwrap();
+
+    let output = TxOut {
+        value,
+        script_pubkey: recipient.clone(),
+    };
+
+    let mut tx = Transaction {
+        version: Version::TWO,
+        lock_time: LockTime::ZERO,
+        input: inputs,
+        output: vec![output],
+    };
+
+    // now that the weight is known, the fee can be calculated.
+    let fee: Amount = FeeRate::fee_wu(fee_rate, tx.weight()).unwrap();
+
+    // now that the fee is known, update the transaction to include a fee.
+    let change = value - target - fee;
+
+    let output = TxOut {
+        value: target,
+        script_pubkey: recipient.clone(),
+    };
+    let change_output = TxOut {
+        value: change,
+        script_pubkey: change_addr,
+    };
+
+    tx.output = vec![output, change_output];
+
+    let mut sighasher = SighashCache::new(&mut tx);
+    for (index, _) in coins.clone().into_iter().enumerate() {
+        let sighash_type = TapSighashType::Default;
+        //let prevouts = vec![tx_out];
+        let prevouts = Prevouts::All(&prevouts);
+
+        let sighash = sighasher
+            .taproot_key_spend_signature_hash(index, &prevouts, sighash_type)
+            .unwrap();
+
+        let s = Secp256k1::new();
+        let tweaked: TweakedKeypair = kp.tap_tweak(&s, None);
+        let msg = Message::from_digest(sighash.to_byte_array());
+        let signature = s.sign_schnorr(&msg, &tweaked.to_keypair());
+
+        let signature = bitcoin::taproot::Signature {
+            signature,
+            sighash_type,
+        };
+        sighasher
+            .witness_mut(index)
+            .unwrap()
+            .push(signature.to_vec());
+    }
+    let tx = sighasher.into_transaction();
+    tx.to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,13 +220,13 @@ mod tests {
         let coin_8926 = tx_coin(&tx_8926);
         let coins = vec![coin_2462, coin_8926];
 
-        let fee_rate = FeeRate::ZERO;
-        let script_pubkey = coins[0].clone().tx_out.script_pubkey;
-        let result_tx = build(&coins, &script_pubkey, kp(), fee_rate).unwrap();
+        let fee_rate = FeeRate::from_sat_per_vb(5).unwrap();
+        let script_pubkey = &coins[0].tx_out.script_pubkey;
+        let tx = build_without_change(&coins, &script_pubkey, kp(), fee_rate).unwrap();
 
         let coin_val: Amount = coins.iter().map(|c| c.tx_out.value).sum();
         let fee = calc_fee(fee_rate, &script_pubkey);
-        let output = &result_tx.output[0];
+        let output = &tx.output[0];
         assert_eq!(output.value, coin_val - fee.unwrap());
     }
 
@@ -154,7 +236,7 @@ mod tests {
         let coin = tx_coin(&tx);
 
         let fee_rate = FeeRate::MAX;
-        let tx = build(&vec![coin], &ScriptBuf::new(), kp(), fee_rate);
+        let tx = build_without_change(&vec![coin], &ScriptBuf::new(), kp(), fee_rate);
         assert!(tx.is_none());
     }
 
@@ -173,7 +255,7 @@ mod tests {
 
         let fee_rate = FeeRate::from_sat_per_vb(10).unwrap();
         let coin = Coin { outpoint, tx_out };
-        let tx = build(&vec![coin], &ScriptBuf::new(), kp(), fee_rate);
+        let tx = build_without_change(&vec![coin], &ScriptBuf::new(), kp(), fee_rate);
         assert!(tx.is_none());
     }
 
@@ -183,7 +265,7 @@ mod tests {
             let coins: Vec<Coin> = Vec::arbitrary(u)?;
             let recipient = ScriptBuf::new();
             let fee_rate: FeeRate = u.arbitrary()?;
-            let tx = build(&coins, &recipient, kp(), fee_rate);
+            let tx = build_without_change(&coins, &recipient, kp(), fee_rate);
 
             match tx {
                 Some(t) => {

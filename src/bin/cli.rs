@@ -1,7 +1,7 @@
 use bitcoin::key::Keypair;
 use bitcoin::secp256k1::rand;
 use bitcoin::secp256k1::{Secp256k1, SecretKey};
-use bitcoin::{Address, Amount, FeeRate, Network, Weight};
+use bitcoin::{Address, Amount, FeeRate, Network, ScriptBuf, Weight};
 use clap::Parser;
 use esplora_client::Builder;
 use rutabaga::coin;
@@ -217,7 +217,7 @@ fn main() {
                 .unwrap()
                 .require_network(Network::Signet)
                 .unwrap();
-            let tx = transaction_builder::build(
+            let tx = transaction_builder::build_without_change(
                 &coin_vec,
                 &address.script_pubkey(),
                 kp,
@@ -253,9 +253,13 @@ fn main() {
                 .unwrap()
                 .require_network(Network::Signet)
                 .unwrap();
-            let tx =
-                transaction_builder::build(&outs, &address.script_pubkey(), kp, bitcoin_fee_rate)
-                    .unwrap();
+            let tx = transaction_builder::build_without_change(
+                &outs,
+                &address.script_pubkey(),
+                kp,
+                bitcoin_fee_rate,
+            )
+            .unwrap();
             let builder = Builder::new("https://blockstream.info/signet/api");
             let blocking_client = builder.build_blocking();
             let response = blocking_client.broadcast(&tx).unwrap();
@@ -269,29 +273,49 @@ fn main() {
             addr,
             fee_rate,
         }) => {
-            let bitcoin_amount = Amount::from_sat(amount);
+            // cost of tx with two output and no inputs
+            let tx_cost = Amount::from_sat(548);
+            let target = Amount::from_sat(amount);
+            let total_target = target + tx_cost;
+
             let bitcoin_fee_rate = FeeRate::from_sat_per_vb_u32(fee_rate);
             let discard_fee_rate = DEFAULT_DISCARD_FEE_RATE;
             let lt_fee_rate = DEFAULT_LONG_TERM_FEE_RATE;
 
             let coins = coin::from_ledger(&outs_ledger, &spent_ledger);
+            println!("{:#?}", coins);
             let cost_of_change = default_tr_cost_of_change(bitcoin_fee_rate, discard_fee_rate);
 
-            let (_, selection) =
-                select_coins(bitcoin_amount, cost_of_change, bitcoin_fee_rate, lt_fee_rate, &coins)
-                    .unwrap();
+            let (_, selection) = select_coins(
+                total_target,
+                cost_of_change,
+                bitcoin_fee_rate,
+                lt_fee_rate,
+                &coins,
+            )
+            .unwrap();
+            println!("selection {:?}", selection);
             let to_spend = selection.into_iter().cloned().collect();
-            let address: Address =
-                Address::from_str(&addr).unwrap().require_network(Network::Signet).unwrap();
+            let address: Address = Address::from_str(&addr)
+                .unwrap()
+                .require_network(Network::Signet)
+                .unwrap();
 
             let s = Secp256k1::new();
             let bytes: Vec<u8> = fs::read(&keys_path).unwrap();
             let sk = SecretKey::from_slice(&bytes).unwrap();
             let kp = Keypair::from_secret_key(&s, &sk);
+            let sender_script_pub_key = ScriptBuf::new_p2tr(&s, kp.x_only_public_key().0, None);
 
-            let tx =
-                transaction_builder::build(to_spend, address.script_pubkey(), kp, bitcoin_fee_rate)
-                    .unwrap();
+            let tx = transaction_builder::build_with_change(
+                &to_spend,
+                target,
+                address.script_pubkey(),
+                sender_script_pub_key,
+                kp,
+                bitcoin_fee_rate,
+            );
+
             let builder = Builder::new("https://blockstream.info/signet/api");
             let blocking_client = builder.build_blocking();
             let response = blocking_client.broadcast(&tx).unwrap();
