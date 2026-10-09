@@ -9,6 +9,7 @@ clap = { version = "4", features = ["derive"]  }
 bitcoinkernel = "0.3"
 esplora-client = { version = "0.13.0", features = ["blocking-https"] }
 bitcoin-coin-selection = { version = "0.9", features = ["rand"] }
+tokio = { version = "1.41", features = ["macros", "rt-multi-thread", "io-util", "net"] }
 
 [dev-dependencies]
 tempfile = "3"
