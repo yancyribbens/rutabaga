@@ -13,10 +13,19 @@ use std::path::Path;
 const ENTRY_SIZE: usize = 32 + 4;
 
 // append a list of entries to file
-pub fn append(path: &Path, outs: Vec<OutPoint>) {
+pub fn append_entries(path: &Path, outpoints: Vec<OutPoint>) {
+    outpoints.into_iter().for_each(|outpoint| {
+        append_entry(path, outpoint);
+    });
+}
+
+pub fn append_entry(path: &Path, outpoint: OutPoint) {
     let mut file = File::options().append(true).create(true).open(path).unwrap();
 
-    outs.into_iter().for_each(|outpoint| {
+    let stored_outpoints = read(path);
+    let duplicate = stored_outpoints.contains(&outpoint);
+
+    if !duplicate {
         let mut buf = [0; ENTRY_SIZE];
         let tx_id = outpoint.txid.to_byte_array();
         let vout = outpoint.vout.to_le_bytes();
@@ -24,7 +33,7 @@ pub fn append(path: &Path, outs: Vec<OutPoint>) {
         buf[0..32].copy_from_slice(&tx_id);
         buf[32..ENTRY_SIZE].copy_from_slice(&vout);
         file.write_all(&buf).unwrap()
-    });
+    }
 }
 
 // read a list of entries from file
@@ -63,13 +72,13 @@ mod tests {
 
     use crate::tests::get_transaction;
 
-    fn outpoints_from_tx(tx: &Transaction) -> Vec<OutPoint> {
-        tx.inputs()
+    fn outpoints_from_tx(tx: &bitcoin::Transaction) -> Vec<OutPoint> {
+        tx.input
+            .iter()
             .map(|i| {
-                let outpoint = i.outpoint();
-                let vout = outpoint.index();
-                let txid = outpoint.txid();
-                let txid = bitcoin::Txid::from_byte_array(txid.to_bytes());
+                let outpoint = i.previous_output;
+                let vout = outpoint.vout;
+                let txid = outpoint.txid;
                 bitcoin::OutPoint { txid, vout }
             })
             .collect()
@@ -82,26 +91,40 @@ mod tests {
 
         let tx_2462 = tests::get_transaction("2462");
         let outpoints = outpoints_from_tx(&tx_2462);
-        append(&file_path, outpoints);
+        append_entries(&file_path, outpoints);
 
         let tx_8926 = tests::get_transaction("8926");
         let outpoints = outpoints_from_tx(&tx_8926);
-        append(&file_path, outpoints);
+        append_entries(&file_path, outpoints);
 
         let spent_outpoints = read(&file_path);
 
         let outpoint = &spent_outpoints[0];
         assert_eq!(
             outpoint.txid.to_byte_array(),
-            tx_2462.inputs().next().unwrap().outpoint().txid().to_bytes()
+            tx_2462.input.iter().next().unwrap().previous_output.txid.to_byte_array()
         );
         assert_eq!(outpoint.vout, 0);
 
         let outpoint = &spent_outpoints[1];
         assert_eq!(
             outpoint.txid.to_byte_array(),
-            tx_8926.inputs().next().unwrap().outpoint().txid().to_bytes()
+            tx_8926.input.iter().next().unwrap().previous_output.txid.to_byte_array()
         );
         assert_eq!(outpoint.vout, 2);
+    }
+
+    #[test]
+    fn duplicate_tx() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("spent_outpoints");
+
+        let tx_2462 = tests::get_transaction("2462");
+        let outpoints = outpoints_from_tx(&tx_2462);
+        append_entries(&file_path, outpoints.clone());
+        append_entries(&file_path, outpoints.clone());
+
+        let spent_outpoints = read(&file_path);
+        assert_eq!(spent_outpoints.len(), 1);
     }
 }

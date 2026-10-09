@@ -1,168 +1,168 @@
-use bitcoin::absolute::LockTime;
-use bitcoin::hashes::Hash;
-use bitcoin::key::Keypair;
-use bitcoin::secp256k1::{Secp256k1, SecretKey, XOnlyPublicKey};
-use bitcoin::transaction::Version;
-use bitcoin::{Address, Amount, FeeRate, OutPoint, ScriptBuf, TxOut};
-use bitcoinkernel::core::{
-    ScriptPubkeyExt, TransactionExt, TxInExt, TxOutExt, TxOutPointExt, TxidExt,
-};
-use bitcoinkernel::TransactionRef;
-use std::{env, fmt, fs};
+//use bitcoin::absolute::LockTime;
+//use bitcoin::hashes::Hash;
+//use bitcoin::key::Keypair;
+//use bitcoin::secp256k1::{Secp256k1, SecretKey, XOnlyPublicKey};
+//use bitcoin::transaction::Version;
+//use bitcoin::{Address, Amount, FeeRate, OutPoint, ScriptBuf, TxOut};
+//use bitcoinkernel::core::{
+    //ScriptPubkeyExt, TransactionExt, TxInExt, TxOutExt, TxOutPointExt, TxidExt,
+//};
+//use bitcoinkernel::TransactionRef;
+//use std::{env, fmt, fs};
 
-use crate::{output_ledger, spent_ledger};
+//use crate::{output_ledger, spent_ledger};
 
-#[derive(Debug)]
-pub struct Wallet {
-    pub scan_height: u32,
-}
-pub struct Error {}
+//#[derive(Debug)]
+//pub struct Wallet {
+    //pub scan_height: u32,
+//}
+//pub struct Error {}
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Error")
-    }
-}
+//impl fmt::Display for Error {
+    //fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        //write!(f, "Error")
+    //}
+//}
 
-impl Error {
-    pub fn is_user_error(&self) -> bool {
-        false
-    }
-}
+//impl Error {
+    //pub fn is_user_error(&self) -> bool {
+        //false
+    //}
+//}
 
-impl Default for Wallet {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+//impl Default for Wallet {
+    //fn default() -> Self {
+        //Self::new()
+    //}
+//}
 
-impl Wallet {
-    pub fn new() -> Self {
-        Self { scan_height: 0 }
-    }
+//impl Wallet {
+    //pub fn new() -> Self {
+        //Self { scan_height: 0 }
+    //}
 
-    pub fn build_transaction(
-        &self,
-        _recipient: Address,
-        _amount: Amount,
-        _fee_rate: FeeRate,
-        _long_term_fee_rate: FeeRate,
-    ) -> Result<bitcoin::Transaction, Error> {
-        let input = vec![];
-        let output = vec![];
+    //pub fn build_transaction(
+        //&self,
+        //_recipient: Address,
+        //_amount: Amount,
+        //_fee_rate: FeeRate,
+        //_long_term_fee_rate: FeeRate,
+    //) -> Result<bitcoin::Transaction, Error> {
+        //let input = vec![];
+        //let output = vec![];
 
-        let tx = bitcoin::Transaction {
-            version: Version::TWO,
-            lock_time: LockTime::from_height(0).unwrap_or(LockTime::ZERO),
-            input,
-            output,
-        };
-        Ok(tx)
-    }
+        //let tx = bitcoin::Transaction {
+            //version: Version::TWO,
+            //lock_time: LockTime::from_height(0).unwrap_or(LockTime::ZERO),
+            //input,
+            //output,
+        //};
+        //Ok(tx)
+    //}
 
-    pub fn process_disconnect(&mut self, _kernel_block: bitcoinkernel::Block) {}
+    //pub fn process_disconnect(&mut self, _kernel_block: bitcoinkernel::Block) {}
 
-    pub fn release_coins(&mut self, _outpoints: impl IntoIterator<Item = bitcoin::OutPoint>) {
-        let v: Vec<bitcoin::OutPoint> = vec![];
-        v.into_iter();
-    }
+    //pub fn release_coins(&mut self, _outpoints: impl IntoIterator<Item = bitcoin::OutPoint>) {
+        //let v: Vec<bitcoin::OutPoint> = vec![];
+        //v.into_iter();
+    //}
 
-    fn read_pubkey_from_file() -> ScriptBuf {
-        let s = Secp256k1::new();
-        let keys_file = env::var("RUTABAGA_KEY_FILE")
-            .expect("key file RUTABAGA_KEY_FILE should be set in env before running");
-        let bytes: Vec<u8> =
-            fs::read(keys_file).expect("the env var RUTABAGA_KEY_FILE should be readable");
-        let sk = SecretKey::from_slice(&bytes).unwrap();
-        let kp = Keypair::from_secret_key(&s, &sk);
-        ScriptBuf::new_p2tr(&s, kp.x_only_public_key().0, None)
-    }
+    //fn read_pubkey_from_file() -> ScriptBuf {
+        //let s = Secp256k1::new();
+        //let keys_file = env::var("RUTABAGA_KEY_FILE")
+            //.expect("key file RUTABAGA_KEY_FILE should be set in env before running");
+        //let bytes: Vec<u8> =
+            //fs::read(keys_file).expect("the env var RUTABAGA_KEY_FILE should be readable");
+        //let sk = SecretKey::from_slice(&bytes).unwrap();
+        //let kp = Keypair::from_secret_key(&s, &sk);
+        //ScriptBuf::new_p2tr(&s, kp.x_only_public_key().0, None)
+    //}
 
-    pub fn script_grep<'a>(
-        script_pubkey: &'a ScriptBuf,
-        block: &'a bitcoinkernel::Block,
-    ) -> Vec<(usize, TransactionRef<'a>)> {
-        let mut ret = vec![];
-        // ignore first transaction in block as coin-base
-        for tx in block.transactions().skip(1) {
-            for (i, out) in tx.outputs().enumerate() {
-                if out.script_pubkey().to_bytes() == script_pubkey.to_bytes() {
-                    ret.push((i, tx))
-                }
-            }
-        }
-        ret
-    }
+    //pub fn script_grep<'a>(
+        //script_pubkey: &'a ScriptBuf,
+        //block: &'a bitcoinkernel::Block,
+    //) -> Vec<(usize, TransactionRef<'a>)> {
+        //let mut ret = vec![];
+         //// ignore first transaction in block as coin-base
+        //for tx in block.transactions().skip(1) {
+            //for (i, out) in tx.outputs().enumerate() {
+                //if out.script_pubkey().to_bytes() == script_pubkey.to_bytes() {
+                    //ret.push((i, tx))
+                //}
+            //}
+        //}
+        //ret
+    //}
 
-    pub fn outpoint_grep(
-        stored_outs: Vec<(OutPoint, TxOut)>,
-        block: &bitcoinkernel::Block,
-    ) -> Vec<OutPoint> {
-        let stored_outpoints: Vec<_> = stored_outs.iter().map(|(outpoint, _)| *outpoint).collect();
-        let mut spent_outs = vec![];
-        for tx in block.transactions().skip(1) {
-            for input in tx.inputs() {
-                let outpoint = input.outpoint();
-                let vout = outpoint.index();
-                let txid = outpoint.txid();
-                let txid = bitcoin::Txid::from_byte_array(txid.to_bytes());
-                let bitcoin_outpoint = bitcoin::OutPoint { txid, vout };
-                if stored_outpoints.contains(&bitcoin_outpoint) {
-                    spent_outs.push(bitcoin_outpoint);
-                }
-            }
-        }
-        spent_outs
-    }
+    //pub fn outpoint_grep(
+        //stored_outs: Vec<(OutPoint, TxOut)>,
+        //block: &bitcoinkernel::Block,
+    //) -> Vec<OutPoint> {
+        //let stored_outpoints: Vec<_> = stored_outs.iter().map(|(outpoint, _)| *outpoint).collect();
+        //let mut spent_outs = vec![];
+        //for tx in block.transactions().skip(1) {
+            //for input in tx.inputs() {
+                //let outpoint = input.outpoint();
+                //let vout = outpoint.index();
+                //let txid = outpoint.txid();
+                //let txid = bitcoin::Txid::from_byte_array(txid.to_bytes());
+                //let bitcoin_outpoint = bitcoin::OutPoint { txid, vout };
+                //if stored_outpoints.contains(&bitcoin_outpoint) {
+                    //spent_outs.push(bitcoin_outpoint);
+                //}
+            //}
+        //}
+        //spent_outs
+    //}
 
-    pub fn scan_block(
-        &mut self,
-        kernel_block: bitcoinkernel::Block,
-        _spent_outputs: bitcoinkernel::BlockSpentOutputs,
-        _block_height: u32,
-    ) -> usize {
-        let script = Self::read_pubkey_from_file();
-        let outs = Self::script_grep(&script, &kernel_block);
+    //pub fn scan_block(
+        //&mut self,
+        //kernel_block: bitcoinkernel::Block,
+        //_spent_outputs: bitcoinkernel::BlockSpentOutputs,
+        //_block_height: u32,
+    //) -> usize {
+        //let script = Self::read_pubkey_from_file();
+        //let outs = Self::script_grep(&script, &kernel_block);
 
-        let ledger_file = env::var("RUTABAGA_LEDGER_FILE")
-            .expect("ledger file RUTABAGA_LEDGER_FILE should be set in env before running");
+        //let ledger_file = env::var("RUTABAGA_LEDGER_FILE")
+            //.expect("ledger file RUTABAGA_LEDGER_FILE should be set in env before running");
 
-        let spent_file = env::var("RUTABAGA_SPENT_FILE")
-            .expect("ledger file RUTABAGA_LEDGER_FILE should be set in env before running");
+        //let spent_file = env::var("RUTABAGA_SPENT_FILE")
+            //.expect("ledger file RUTABAGA_LEDGER_FILE should be set in env before running");
 
-        let path = std::path::Path::new(&ledger_file);
-        output_ledger::append(path, outs);
+        //let path = std::path::Path::new(&ledger_file);
+        //output_ledger::append(path, outs);
 
-        let ledger = output_ledger::read(path);
-        let spent_outs = Self::outpoint_grep(ledger, &kernel_block);
-        let spent_path = std::path::Path::new(&spent_file);
-        spent_ledger::append(spent_path, spent_outs);
+        //let ledger = output_ledger::read(path);
+        //let spent_outs = Self::outpoint_grep(ledger, &kernel_block);
+        //let spent_path = std::path::Path::new(&spent_file);
+        //spent_ledger::append(spent_path, spent_outs);
 
-        0
-    }
+        //0
+    //}
 
-    pub fn import_keys(
-        &mut self,
-        _scan_key: SecretKey,
-        _spend_xonly: XOnlyPublicKey,
-    ) -> Result<(), Error> {
-        Ok(())
-    }
+    //pub fn import_keys(
+        //&mut self,
+        //_scan_key: SecretKey,
+        //_spend_xonly: XOnlyPublicKey,
+    //) -> Result<(), Error> {
+        //Ok(())
+    //}
 
-    pub fn balance(&self) -> bitcoin::Amount {
-        bitcoin::Amount::ZERO
-    }
+    //pub fn balance(&self) -> bitcoin::Amount {
+        //bitcoin::Amount::ZERO
+    //}
 
-    pub fn utxo_count(&self) -> usize {
-        0
-    }
+    //pub fn utxo_count(&self) -> usize {
+        //0
+    //}
 
-    pub fn reserve_coins(&mut self, _outpoints: impl IntoIterator<Item = bitcoin::OutPoint>) {
-        let v: Vec<bitcoin::OutPoint> = vec![];
-        v.into_iter();
-    }
+    //pub fn reserve_coins(&mut self, _outpoints: impl IntoIterator<Item = bitcoin::OutPoint>) {
+        //let v: Vec<bitcoin::OutPoint> = vec![];
+        //v.into_iter();
+    //}
 
-    pub fn receive_address(&self) -> Option<String> {
-        None
-    }
-}
+    //pub fn receive_address(&self) -> Option<String> {
+        //None
+    //}
+//}

@@ -62,11 +62,17 @@ mod tests {
         let (outpoint, _) = outs[0];
         let dir = tempfile::tempdir().unwrap();
         let spent_path = dir.path().join("spent");
-        spent_ledger::append(&spent_path, vec![outpoint]);
+        spent_ledger::append_entries(&spent_path, vec![outpoint]);
 
         let coin = coin::from_ledger(&outs_path, &spent_path);
-        assert_eq!(coin.len(), 1);
+        assert_eq!(coin.len(), 3);
         assert_eq!(outs[1].0, coin[0].outpoint);
         assert_eq!(outs[1].1, coin[0].tx_out);
+
+        assert_eq!(outs[2].0, coin[1].outpoint);
+        assert_eq!(outs[2].1, coin[1].tx_out);
+
+        assert_eq!(outs[3].0, coin[2].outpoint);
+        assert_eq!(outs[3].1, coin[2].tx_out);
     }
 }
