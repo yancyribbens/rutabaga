@@ -25,7 +25,7 @@ cargo run --bin wallet print-keys-from-keys-file ~/rutabaga_keys
 
 run node with wallet env vars
 ```
-RUTABAGA_KEY_FILE=~/rutabaga_keys RUTABAGA_LEDGER_FILE=~/rutabaga_output_ledger RUTABAGA_SPENT_FILE=~/rutabaga_spent_ledger cargo run --bin node --release -- --network signet
+rutabaga ~/rutabaga 13.140.133.208:38333 ~/rutabaga_keys ~/rutabaga_output_ledger ~/rutabaga_spent_ledger
 ```
 
 # Ledger

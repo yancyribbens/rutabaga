@@ -192,26 +192,17 @@ mod tests {
     use super::*;
     use arbtest::arbitrary::{Arbitrary, Result, Unstructured};
     use arbtest::arbtest;
-    use bitcoin::consensus;
-    use bitcoin::secp256k1::SecretKey;
     use bitcoin::{OutPoint, Transaction};
-    use bitcoinkernel::core::TransactionExt;
+    use bitcoin::secp256k1::SecretKey;
+    use bitcoin::amount::CheckedSum;
+    use bitcoin_coin_selection::WeightedUtxo;
 
     use crate::tests::get_transaction;
-
-    use bitcoin::amount::CheckedSum;
-
-    use bitcoin_coin_selection::WeightedUtxo;
 
     fn kp() -> Keypair {
         let s = Secp256k1::new();
         let sk = SecretKey::from_slice(&[0xcd; 32]).expect("32 bytes, within curve order");
         Keypair::from_secret_key(&s, &sk)
-    }
-
-    fn bitcoin_tx(tx: bitcoinkernel::Transaction) -> bitcoin::Transaction {
-        let t: Vec<u8> = tx.consensus_encode().unwrap();
-        consensus::deserialize(&t).unwrap()
     }
 
     fn calc_input_sum(inputs: &[TxIn], coins: Vec<Coin>) -> Amount {
@@ -244,8 +235,8 @@ mod tests {
 
     #[test]
     fn valid_build_tx_without_change() {
-        let tx_2462 = bitcoin_tx(get_transaction("2462"));
-        let tx_8926 = bitcoin_tx(get_transaction("8926"));
+        let tx_2462 = get_transaction("2462");
+        let tx_8926 = get_transaction("8926");
 
         let coin_2462 = tx_coin(&tx_2462);
         let coin_8926 = tx_coin(&tx_8926);
@@ -256,7 +247,7 @@ mod tests {
         let tx = build_without_change(&coins, script_pubkey, kp(), fee_rate).unwrap();
 
         let coin_val: Amount = coins.iter().map(|c| c.tx_out.value).sum();
-        let fee = calc_fee(fee_rate, &[], &[&script_pubkey]);
+        let fee = calc_fee(fee_rate, &[], &[script_pubkey]);
         let output = &tx.output[0];
         assert_eq!(output.value, coin_val - fee.unwrap());
     }
@@ -265,7 +256,7 @@ mod tests {
     fn valid_build_tx_with_maybe_change() {
         let s = Secp256k1::new();
 
-        let tx_2462 = bitcoin_tx(get_transaction("2462"));
+        let tx_2462 = get_transaction("2462");
         let coin_a = tx_coin(&tx_2462);
         let coin_b = coin_a.clone();
         let coins = vec![coin_a, coin_b];
@@ -293,8 +284,8 @@ mod tests {
 
     #[test]
     fn valid_build_tx_with_change() {
-        let tx_2462 = bitcoin_tx(get_transaction("2462"));
-        let tx_8926 = bitcoin_tx(get_transaction("8926"));
+        let tx_2462 = get_transaction("2462");
+        let tx_8926 = get_transaction("8926");
 
         let coin_2462 = tx_coin(&tx_2462);
         let coin_8926 = tx_coin(&tx_8926);
@@ -312,7 +303,7 @@ mod tests {
         assert!(!inputs.is_empty());
         assert!(outputs.len() == 2);
 
-        let tx_fee = calc_fee(fee_rate, &tx.input, &[&recipient, &change_addr]).unwrap();
+        let tx_fee = calc_fee(fee_rate, &tx.input, &[&recipient, change_addr]).unwrap();
 
         let input_sum = calc_input_sum(inputs, coins);
         assert!(input_sum + tx_fee >= target);
@@ -329,7 +320,7 @@ mod tests {
 
     #[test]
     fn bnb_target() {
-        let tx_2462 = bitcoin_tx(get_transaction("2462"));
+        let tx_2462 = get_transaction("2462");
         let coin = tx_coin(&tx_2462);
         let coins = vec![coin];
         let target = coins[0].value();
@@ -352,7 +343,7 @@ mod tests {
 
     #[test]
     fn invalid_fee_rate_tx_without_change() {
-        let tx = bitcoin_tx(get_transaction("2462"));
+        let tx = get_transaction("2462");
         let coin = tx_coin(&tx);
 
         let fee_rate = FeeRate::MAX;
@@ -372,7 +363,7 @@ mod tests {
 
     #[test]
     fn val_less_than_fee() {
-        let tx = bitcoin_tx(get_transaction("2462"));
+        let tx = get_transaction("2462");
         let outpoint = OutPoint { txid: tx.compute_txid(), vout: 0 };
 
         let tx_out = TxOut { value: Amount::ZERO, script_pubkey: ScriptBuf::new() };

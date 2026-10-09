@@ -1,7 +1,5 @@
 use bitcoin::hashes::Hash;
-use bitcoin::{OutPoint, ScriptBuf, TxOut, Txid};
-use bitcoinkernel::core::{ScriptPubkeyExt, TransactionExt, TxOutExt, TxidExt};
-use bitcoinkernel::TransactionRef;
+use bitcoin::{OutPoint, TxOut};
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -14,25 +12,6 @@ use std::path::Path;
 //  [32 bytes, 4 bytes, 8 bytes, 34 bytes] -> 78 bytes
 const ENTRY_SIZE: usize = 32 + 4 + 8 + 34;
 
-// Create rust-bitcoin OutPoint from kernel parts
-fn outpoint<'a>(vout: u32, tx_ref: TransactionRef<'a>) -> OutPoint {
-    let id_bytes = tx_ref.to_owned().txid().to_bytes();
-    let txid = Txid::from_byte_array(id_bytes);
-    OutPoint { vout, txid }
-}
-
-// Create rust-bitcoin TxOut from kernel parts
-fn output<'a>(index: usize, tx_ref: TransactionRef<'a>) -> TxOut {
-    let tx = tx_ref.to_owned();
-    let mut outputs = tx.outputs();
-    let output = outputs.nth(index).unwrap();
-    let script_bytes = output.script_pubkey().to_bytes();
-    let script = ScriptBuf::from_bytes(script_bytes);
-    let value = output.value();
-    let amount = bitcoin::SignedAmount::from_sat(value).to_unsigned().unwrap();
-    TxOut { value: amount, script_pubkey: script }
-}
-
 // Create an entry to be written to file.
 //
 // store:
@@ -41,14 +20,11 @@ fn output<'a>(index: usize, tx_ref: TransactionRef<'a>) -> TxOut {
 //
 // memory layout:
 //  [32 bytes, 4 bytes, 8 bytes, 34 bytes] -> 78 bytes
-fn to_entry<'a>(index: usize, tx_ref: TransactionRef<'a>) -> [u8; ENTRY_SIZE] {
-    let vout: u32 = index.try_into().unwrap();
-    let outpoint = outpoint(vout, tx_ref);
-    let output = output(index, tx_ref);
-
+fn to_entry(outpoint: OutPoint, output: TxOut) -> [u8; ENTRY_SIZE] {
     let tx_id = outpoint.txid.to_byte_array();
-    let vout = vout.to_le_bytes();
+    let vout = outpoint.vout.to_le_bytes();
     let value = output.value.to_sat().to_le_bytes();
+    println!("append entry: {:?}", value);
     let script_bytes = output.script_pubkey.to_bytes();
 
     assert_eq!(script_bytes.len(), 34);
@@ -62,14 +38,25 @@ fn to_entry<'a>(index: usize, tx_ref: TransactionRef<'a>) -> [u8; ENTRY_SIZE] {
 }
 
 // append a list of entries to file
-pub fn append<'a>(path: &Path, outs: Vec<(usize, TransactionRef<'a>)>) {
+pub fn append_entries(path: &Path, outs: Vec<(OutPoint, TxOut)>) {
+    outs.into_iter().for_each(|(outpoint, output)| append_entry(path, outpoint, output))
+}
+
+// append a list of entries to file
+pub fn append_entry(path: &Path, outpoint: OutPoint, output: TxOut) {
     let mut file = fs::File::options().append(true).create(true).open(path).unwrap();
 
-    outs.into_iter().for_each(|(i, tx_ref)| file.write_all(&to_entry(i, tx_ref)).unwrap())
+    let stored_outs = read(path);
+    let duplicate = stored_outs.contains(&(outpoint, output.clone()));
+
+    if !duplicate {
+        let _ = file.write_all(&to_entry(outpoint, output));
+    }
 }
 
 // read a list of entries from file
 pub fn read(path: &Path) -> Vec<(OutPoint, TxOut)> {
+    // TODO create empty file if none exists.
     let bytes = fs::read(path).unwrap();
     let output_count = bytes.len() / ENTRY_SIZE;
     (0..output_count)
@@ -144,31 +131,71 @@ mod tests {
         write_tx_outs_to_file(&tx_2462, &outs_path);
         write_tx_outs_to_file(&tx_8926, &outs_path);
         let outs = read(&outs_path);
+        assert_eq!(outs.len(), 4);
 
         let out = &outs[0];
         let (outpoint, output) = out;
-        assert_eq!(outpoint.txid.to_byte_array(), tx_2462.txid().to_bytes());
-        assert_eq!(outpoint.vout, 1);
+        assert_eq!(outpoint.txid.to_byte_array(), tx_2462.compute_txid().to_byte_array());
+        assert_eq!(outpoint.vout, 0);
         assert_eq!(
-            output.value.to_sat(),
-            tx_2462.outputs().nth(1).unwrap().value().try_into().unwrap()
+            output.value,
+            tx_2462.output.first().unwrap().value
         );
         assert_eq!(
             output.script_pubkey.to_bytes(),
-            tx_2462.outputs().nth(1).unwrap().script_pubkey().to_bytes()
+            tx_2462.output.first().unwrap().script_pubkey.to_bytes()
         );
 
         let out = &outs[1];
         let (outpoint, output) = out;
-        assert_eq!(outpoint.txid.to_byte_array(), tx_8926.txid().to_bytes());
+        assert_eq!(outpoint.txid.to_byte_array(), tx_2462.compute_txid().to_byte_array());
         assert_eq!(outpoint.vout, 1);
         assert_eq!(
-            output.value.to_sat(),
-            tx_8926.outputs().nth(1).unwrap().value().try_into().unwrap()
+            output.value,
+            tx_2462.output.get(1).unwrap().value
         );
         assert_eq!(
             output.script_pubkey.to_bytes(),
-            tx_8926.outputs().nth(1).unwrap().script_pubkey().to_bytes()
+            tx_2462.output.get(1).unwrap().script_pubkey.to_bytes()
         );
+
+        let out = &outs[2];
+        let (outpoint, output) = out;
+        assert_eq!(outpoint.txid.to_byte_array(), tx_8926.compute_txid().to_byte_array());
+        assert_eq!(outpoint.vout, 0);
+        assert_eq!(
+            output.value,
+            tx_8926.output.first().unwrap().value
+        );
+        assert_eq!(
+            output.script_pubkey.to_bytes(),
+            tx_8926.output.first().unwrap().script_pubkey.to_bytes()
+        );
+
+        let out = &outs[3];
+        let (outpoint, output) = out;
+        assert_eq!(outpoint.txid.to_byte_array(), tx_8926.compute_txid().to_byte_array());
+        assert_eq!(outpoint.vout, 1);
+        assert_eq!(
+            output.value,
+            tx_8926.output.get(1).unwrap().value
+        );
+        assert_eq!(
+            output.script_pubkey.to_bytes(),
+            tx_8926.output.get(1).unwrap().script_pubkey.to_bytes()
+        );
+    }
+
+    #[test]
+    fn duplicate_tx() {
+        let dir = tempfile::tempdir().unwrap();
+        let outs_path = dir.path().join("outputs");
+
+        let tx_2462 = tests::get_transaction("2462");
+        write_tx_outs_to_file(&tx_2462, &outs_path);
+        write_tx_outs_to_file(&tx_2462, &outs_path);
+
+        let outs = read(&outs_path);
+        assert_eq!(outs.len(), 2);
     }
 }
