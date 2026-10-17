@@ -192,21 +192,17 @@ async fn run_connection(network: Network, address: SocketAddr, mut data_file: Fi
                     for inv in inv_vec {
                         match inv {
                             Inventory::Block(hash) => {
-                                println!("hash avail {}", hash);
-
-                                let stop_hash: BlockHash = BlockHash::from_slice(&[0; 32]).unwrap();
-                                let get_headers_message = GetHeadersMessage {
-                                    version: PROTOCOL_VERSION,
-                                    locator_hashes: vec![*hash],
-                                    stop_hash
-                                };
-
-                                let get_headers = RawNetworkMessage::new(
+                                // TODO check if I have this hash/blockheader one or not
+                                
+                                let inv_message = RawNetworkMessage::new(
                                     bitcoin::Network::Signet.magic(),
-                                    NetworkMessage::GetHeaders(get_headers_message)
+                                    NetworkMessage::GetData(inv_vec.clone())
                                 );
-                                println!("req hash: {}", hash);
-                                let _ = stream.write_all(encode::serialize(&get_headers).as_slice());
+
+                                //TODO append hash as waiting to get
+                                //headers_queue.append(&mut queue);
+                                println!("req block: {}", hash);
+                                let _ = stream.write_all(encode::serialize(&inv_message).as_slice());
                             },
                             _ => println!("unknown {:?}", inv)
                         }
