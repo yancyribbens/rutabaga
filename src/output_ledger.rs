@@ -56,16 +56,19 @@ pub fn append_entry(path: &Path, outpoint: OutPoint, output: TxOut) {
 
 // read a list of entries from file
 pub fn read(path: &Path) -> Vec<(OutPoint, TxOut)> {
-    // TODO create empty file if none exists.
-    let bytes = fs::read(path).unwrap();
-    let output_count = bytes.len() / ENTRY_SIZE;
-    (0..output_count)
-        .map(|i| {
-            let curr = i * ENTRY_SIZE;
-            let next = (i * ENTRY_SIZE) + ENTRY_SIZE;
-            read_outs(&bytes[curr..next])
-        })
-        .collect()
+    if !path.exists() {
+        vec![]
+    } else {
+        let bytes = fs::read(path).unwrap();
+        let output_count = bytes.len() / ENTRY_SIZE;
+        (0..output_count)
+            .map(|i| {
+                let curr = i * ENTRY_SIZE;
+                let next = (i * ENTRY_SIZE) + ENTRY_SIZE;
+                read_outs(&bytes[curr..next])
+            })
+            .collect()
+    }
 }
 
 // read:
