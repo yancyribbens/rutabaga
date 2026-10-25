@@ -1,1 +1,1 @@
-# rutabaga
+# Rutabaga Wallet
