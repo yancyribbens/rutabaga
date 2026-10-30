@@ -174,13 +174,13 @@ async fn connect(
                             let outs = script_grep(spend_script, block);
 
                             // write any of the keys and value
-                            output_ledger::append_entries(outputs_path, outs);
-                            let ledger = output_ledger::read(outputs_path);
+                            //output_ledger::append_entries(outputs_path, outs);
+                            //let ledger = output_ledger::read(outputs_path);
 
                             // check if any of the outpoints are spent
-                            let spent_outs = outpoint_grep(ledger, block);
+                            //let spent_outs = outpoint_grep(ledger, block);
 
-                            spent_ledger::append_entries(spents_path, spent_outs);
+                            //spent_ledger::append_entries(spents_path, spent_outs);
                         } else {
                             println!(
                                 "ignoring block {} recieved out of order preceeded by {}",

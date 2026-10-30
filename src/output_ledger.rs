@@ -4,6 +4,45 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
+use std::fs::File;
+use std::io::prelude::*;
+
+pub struct OutsFile {
+    pub file: File
+}
+
+impl OutsFile {
+    pub fn new(path: &Path) -> OutsFile {
+        let file = File::open(path).unwrap();
+        OutsFile { file }
+    }
+
+    pub fn len(&mut self) -> usize {
+        let outs = self.read();
+        outs.len()
+    }
+
+    // read a list of entries from file
+    pub fn read(&mut self) -> Vec<(OutPoint, TxOut)> {
+        let mut buf = Vec::new();
+        let bytes = &self.file.read_exact(&mut buf);
+        // TODO create empty file if none exists.
+        //let bytes = fs::read(path).unwrap();
+        //let output_count = bytes.len() / ENTRY_SIZE;
+        //(0..output_count)
+            //.map(|i| {
+                //let curr = i * ENTRY_SIZE;
+                //let next = (i * ENTRY_SIZE) + ENTRY_SIZE;
+                //read_outs(&bytes[curr..next])
+            //})
+            //.collect()
+
+
+        vec![]
+    }
+
+}
+
 // entry size:
 //  OutPoint { tx_id,: 32 bytes, vout: 4 bytes }
 //  TxOut { value: 8 bytes, script_pukey: 34 bytes }
@@ -44,28 +83,14 @@ pub fn append_entries(path: &Path, outs: Vec<(OutPoint, TxOut)>) {
 
 // append a list of entries to file
 pub fn append_entry(path: &Path, outpoint: OutPoint, output: TxOut) {
-    let mut file = fs::File::options().append(true).create(true).open(path).unwrap();
+    //let mut file = fs::File::options().append(true).create(true).open(path).unwrap();
 
-    let stored_outs = read(path);
-    let duplicate = stored_outs.contains(&(outpoint, output.clone()));
+    //let stored_outs = read(path);
+    //let duplicate = stored_outs.contains(&(outpoint, output.clone()));
 
-    if !duplicate {
-        let _ = file.write_all(&to_entry(outpoint, output));
-    }
-}
-
-// read a list of entries from file
-pub fn read(path: &Path) -> Vec<(OutPoint, TxOut)> {
-    // TODO create empty file if none exists.
-    let bytes = fs::read(path).unwrap();
-    let output_count = bytes.len() / ENTRY_SIZE;
-    (0..output_count)
-        .map(|i| {
-            let curr = i * ENTRY_SIZE;
-            let next = (i * ENTRY_SIZE) + ENTRY_SIZE;
-            read_outs(&bytes[curr..next])
-        })
-        .collect()
+    //if !duplicate {
+        //let _ = file.write_all(&to_entry(outpoint, output));
+    //}
 }
 
 // read:
@@ -85,17 +110,19 @@ fn read_outpoint(bytes: &[u8]) -> OutPoint {
 // read:
 //  TxOut { value: 8 bytes, script_pukey: 34 bytes }
 fn read_tx_out(bytes: &[u8]) -> TxOut {
-    let mut value_bytes = [0; 8];
-    value_bytes.copy_from_slice(&bytes[0..8]);
-    let value = i64::from_le_bytes(value_bytes);
-    let signed_amount = bitcoin::SignedAmount::from_sat(value);
-    let value = signed_amount.to_unsigned().unwrap();
+    //let mut value_bytes = [0; 8];
+    //value_bytes.copy_from_slice(&bytes[0..8]);
+    //let value = i64::from_le_bytes(value_bytes);
+    //let signed_amount = bitcoin::SignedAmount::from_sat(value);
+    //let value = signed_amount.to_unsigned().unwrap();
 
-    let mut script_bytes = [0; 34];
-    script_bytes.copy_from_slice(&bytes[8..8 + 34]);
-    let script_pubkey = bitcoin::ScriptBuf::from_bytes(script_bytes.to_vec());
+    //let mut script_bytes = [0; 34];
+    //script_bytes.copy_from_slice(&bytes[8..8 + 34]);
+    //let script_pubkey = bitcoin::ScriptBuf::from_bytes(script_bytes.to_vec());
 
-    bitcoin::TxOut { value, script_pubkey }
+    //bitcoin::TxOut { value: Amount::ZERO, vec![] }
+
+    bitcoin::TxOut { value: bitcoin::Amount::ZERO, script_pubkey: bitcoin::ScriptBuf::new() }
 }
 
 // Read an entry from storage

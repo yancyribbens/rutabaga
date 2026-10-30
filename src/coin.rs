@@ -6,6 +6,7 @@
 use bitcoin::{Amount, OutPoint, TxOut, Weight};
 use bitcoin_coin_selection::WeightedUtxo;
 use std::path::Path;
+use crate::output_ledger::OutsFile;
 
 use crate::{output_ledger, spent_ledger};
 
@@ -28,8 +29,8 @@ impl WeightedUtxo for Coin {
     }
 }
 
-pub fn from_ledger(outs_ledger: &Path, spent_ledger: &Path) -> Vec<Coin> {
-    let outs = output_ledger::read(outs_ledger);
+pub fn from_ledger(outs_file: &mut OutsFile, spent_ledger: &Path) -> Vec<Coin> {
+    let outs = outs_file.read();
     let spent_outpoints = spent_ledger::read(spent_ledger);
     to_coin(outs, spent_outpoints)
 }
