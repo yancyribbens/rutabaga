@@ -7,14 +7,14 @@ use bitcoin::secp256k1::{Secp256k1, SecretKey};
 use bitcoin::{Address, Amount, FeeRate, Network, ScriptBuf};
 use clap::Parser;
 use esplora_client::Builder;
-use rutabaga::coin::from_outs;
-use rutabaga::transaction_builder;
-use rutabaga::transaction_builder::build_without_change;
+//use rutabaga::coin::from_outs;
 use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
+
+use bitcoin_transaction_builder::{from_amount, from_coins, from_outs};
 
 #[derive(clap::Parser)]
 #[command(author, version, about, long_about = None)]
@@ -158,9 +158,7 @@ fn main() {
                 .collect();
             let address: Address =
                 Address::from_str(&addr).unwrap().require_network(Network::Signet).unwrap();
-            let tx =
-                build_without_change(&select_coins, &address.script_pubkey(), kp, bitcoin_fee_rate)
-                    .unwrap();
+            let tx = from_coins(&select_coins, &address.script_pubkey(), kp, bitcoin_fee_rate).unwrap();
             let builder = Builder::new("https://blockstream.info/signet/api");
             let blocking_client = builder.build_blocking();
             let response = blocking_client.broadcast(&tx).unwrap();
@@ -184,7 +182,7 @@ fn main() {
             let sender_script_pub_key = ScriptBuf::new_p2tr(&s, kp.x_only_public_key().0, None);
 
             let target = Amount::from_sat(amount);
-            let tx = transaction_builder::build_with_change_possible(
+            let tx = from_amount(
                 &coins,
                 target,
                 &address.script_pubkey(),

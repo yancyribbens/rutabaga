@@ -57,7 +57,6 @@ impl HashTracker {
         let bytes = file.metadata().unwrap().len();
         assert!(bytes.is_multiple_of(32));
         let block_height = (bytes / 32) as i64;
-        println!("stored block height: {:?}", block_height);
         block_height
     }
 
