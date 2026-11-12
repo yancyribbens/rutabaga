@@ -4,17 +4,17 @@ use rutabaga::spent_file::SpentFile;
 use bitcoin::key::Keypair;
 use bitcoin::secp256k1::rand;
 use bitcoin::secp256k1::{Secp256k1, SecretKey};
-use bitcoin::{Address, Amount, FeeRate, Network, ScriptBuf};
+use bitcoin::{Address, Amount, FeeRate, Network, OutPoint, ScriptBuf, TxOut};
 use clap::Parser;
 use esplora_client::Builder;
-//use rutabaga::coin::from_outs;
 use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use bitcoin_transaction_builder::{from_amount, from_coins, from_outs};
+use bitcoin_transaction_builder::p2tr_transaction::{from_amount, from_coins};
+use bitcoin_transaction_builder::coin::Coin;
 
 #[derive(clap::Parser)]
 #[command(author, version, about, long_about = None)]
@@ -60,6 +60,17 @@ enum WalletCmd {
         addr: String,
         fee_rate: u32,
     },
+}
+
+pub fn from_outs(outs: Vec<(OutPoint, TxOut)>, spent_outpoints: Vec<OutPoint>) -> Vec<Coin> {
+    to_coin(outs, spent_outpoints)
+}
+
+pub fn to_coin(outs: Vec<(OutPoint, TxOut)>, spent_outputs: Vec<OutPoint>) -> Vec<Coin> {
+    outs.into_iter()
+        .filter(|(outpoint, _)| !spent_outputs.contains(outpoint))
+        .map(|(outpoint, tx_out)| Coin { outpoint, tx_out })
+        .collect()
 }
 
 fn main() {

@@ -55,7 +55,7 @@ impl HashTracker {
 
     fn compute_block_height(file: &File) -> i64 {
         let bytes = file.metadata().unwrap().len();
-        assert!(bytes.is_multiple_of(32));
+        assert!(bytes % 32 == 0);
         let block_height = (bytes / 32) as i64;
         block_height
     }
