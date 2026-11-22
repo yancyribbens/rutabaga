@@ -20,6 +20,8 @@ use log::{debug, info, trace};
 
 const GENESIS_BLOCKHASH: &str = "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6";
 
+use std::collections::hash_map::Entry;
+
 pub struct HashTracker {
     file: File,
     map: HashMap<BlockHash, i64>,
@@ -83,8 +85,10 @@ impl HashTracker {
     }
 
     pub fn insert_and_store(&mut self, block_hash: BlockHash, height: i64) {
-        let _ = self.map.entry(block_hash).insert_entry(height);
-        self.file.write_all(&block_hash.to_byte_array()).unwrap()
+        if let Entry::Vacant(entry) = self.map.entry(block_hash) {
+            entry.insert(height);
+            self.file.write_all(&block_hash.to_byte_array()).unwrap()
+        }
     }
 
     pub fn contains_hash(&mut self, block_hash: &BlockHash) -> bool {
@@ -128,6 +132,9 @@ mod tests {
         let next_hash_str = "00000086d6b2636cb2a392d45edc4ec544a10024d30141c9adf4bfd9de533b53";
         let next_hash: BlockHash = next_hash_str.parse().unwrap();
         tracker.insert_and_store(next_hash, 1);
+        assert_eq!((1, next_hash), tracker.last_hash());
+
+        tracker.insert_and_store(next_hash, 2);
         assert_eq!((1, next_hash), tracker.last_hash());
     }
 
