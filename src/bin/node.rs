@@ -324,3 +324,38 @@ async fn main() -> std::io::Result<()> {
 
     Ok(())
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::thread;
+
+    #[test]
+    fn test_with_local_server() {
+        // Bind to port 0 for a random available port
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Spawn mock server
+        thread::spawn(move || {
+            if let Ok((mut socket, _)) = listener.accept() {
+                let mut buf = [0; 5];
+                socket.read_exact(&mut buf).unwrap();
+                assert_eq!(&buf, b"HELLO");
+                socket.write_all(b"WORLD").unwrap();
+            }
+        });
+
+        // Run your actual code against `addr`
+        let mut client = TcpStream::connect(addr).unwrap();
+        client.write_all(b"HELLO").unwrap();
+        let mut response = String::new();
+        client.read_to_string(&mut response).unwrap();
+
+        assert_eq!(response, "WORLD");
+    }
+}
