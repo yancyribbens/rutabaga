@@ -88,6 +88,7 @@ async fn connect(
     spent_path: &Path,
     tracker_path: &Path,
 ) -> std::io::Result<()> {
+    println!("run connect");
     let mut hash_tracker = HashTracker::new(tracker_path);
     let mut outs_file = OutsFile::new(outs_path);
     let mut spent_file = SpentFile::new(spent_path);
@@ -99,6 +100,7 @@ async fn connect(
     let mut decoding_fails: u64 = 0;
     if let Ok(mut stream) = TcpStream::connect(address) {
         let _ = stream.write_all(encode::serialize(&first_message).as_slice());
+        println!("sent msg");
         info!("Sent version message");
 
         // Setup StreamReader
@@ -107,6 +109,8 @@ async fn connect(
 
         loop {
             let reply = RawNetworkMessage::consensus_decode(&mut stream_reader);
+            println!("{:?}", reply);
+
             if let Ok(r) = reply {
                 match r.payload() {
                     NetworkMessage::Block(block) => {
@@ -334,8 +338,8 @@ mod tests {
     use std::net::{TcpListener, TcpStream};
     use std::thread;
 
-    #[test]
-    fn test_with_local_server() {
+    #[tokio::test]
+    async fn test_with_local_server() {
         // Bind to port 0 for a random available port
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
@@ -350,12 +354,18 @@ mod tests {
             }
         });
 
-        // Run your actual code against `addr`
-        let mut client = TcpStream::connect(addr).unwrap();
-        client.write_all(b"HELLO").unwrap();
-        let mut response = String::new();
-        client.read_to_string(&mut response).unwrap();
+        let tracker_path = Path::new(&"");
+        let spend_script = ScriptBuf::new();
+        let outputs_path = Path::new(&"");
+        let spent_path = Path::new(&"");
 
-        assert_eq!(response, "WORLD");
+        // Run your actual code against `addr`
+        connect(Network::Signet, addr, &spend_script, outputs_path, spent_path, tracker_path).await;
+        //let mut client = TcpStream::connect(addr).unwrap();
+        //client.write_all(b"HELLO").unwrap();
+        //let mut response = String::new();
+        //client.read_to_string(&mut response).unwrap();
+
+        //assert_eq!(response, "WORLD");
     }
 }
