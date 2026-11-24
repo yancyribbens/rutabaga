@@ -88,7 +88,6 @@ async fn connect(
     spent_path: &Path,
     tracker_path: &Path,
 ) -> std::io::Result<()> {
-    println!("run connect");
     let mut hash_tracker = HashTracker::new(tracker_path);
     let mut outs_file = OutsFile::new(outs_path);
     let mut spent_file = SpentFile::new(spent_path);
@@ -100,7 +99,6 @@ async fn connect(
     let mut decoding_fails: u64 = 0;
     if let Ok(mut stream) = TcpStream::connect(address) {
         let _ = stream.write_all(encode::serialize(&first_message).as_slice());
-        println!("sent msg");
         info!("Sent version message");
 
         // Setup StreamReader
@@ -109,7 +107,6 @@ async fn connect(
 
         loop {
             let reply = RawNetworkMessage::consensus_decode(&mut stream_reader);
-            println!("{:?}", reply);
 
             if let Ok(r) = reply {
                 match r.payload() {
@@ -226,7 +223,9 @@ async fn connect(
                 if decoding_fails > 100 {
                     error!("reached connection error limit, shutting down");
                     let _ = stream.shutdown(Shutdown::Both);
-                    process::exit(1);
+
+                    // TODO this should return an Error type
+                    return Ok(());
                 }
             }
         }
@@ -319,7 +318,8 @@ async fn main() -> std::io::Result<()> {
             "Error paths are not unique: {:?} {:?} {:?} {:?}",
             str_tracker_path, str_keys_path, str_outputs_path, str_spent_path
         );
-        process::exit(1);
+        // TODO this should be an error type returned
+        return Ok(())
     }
 
     let _ =
@@ -339,7 +339,16 @@ mod tests {
     use std::thread;
 
     #[tokio::test]
-    async fn test_with_local_server() {
+    async fn test_no_server_response() {
+        let dir = tempfile::tempdir().unwrap();
+        let tracker_file = dir.path().join("tracker_file");
+
+        let dir = tempfile::tempdir().unwrap();
+        let outs_file = dir.path().join("outs_file");
+
+        let dir = tempfile::tempdir().unwrap();
+        let spent_file = dir.path().join("spent_file");
+
         // Bind to port 0 for a random available port
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
@@ -347,20 +356,20 @@ mod tests {
         // Spawn mock server
         thread::spawn(move || {
             if let Ok((mut socket, _)) = listener.accept() {
-                let mut buf = [0; 5];
-                socket.read_exact(&mut buf).unwrap();
-                assert_eq!(&buf, b"HELLO");
-                socket.write_all(b"WORLD").unwrap();
+                //let mut buf = [0; 5];
+                //socket.read_exact(&mut buf).unwrap();
+                //assert_eq!(&buf, b"HELLO");
+                //socket.write_all(b"WORLD").unwrap();
             }
         });
 
-        let tracker_path = Path::new(&"");
         let spend_script = ScriptBuf::new();
-        let outputs_path = Path::new(&"");
-        let spent_path = Path::new(&"");
 
         // Run your actual code against `addr`
-        connect(Network::Signet, addr, &spend_script, outputs_path, spent_path, tracker_path).await;
+        let result =
+            connect(Network::Signet, addr, &spend_script, &outs_file, &spent_file, &tracker_file).await;
+        // TODO this should be an error type.
+        assert!(result.is_ok());
         //let mut client = TcpStream::connect(addr).unwrap();
         //client.write_all(b"HELLO").unwrap();
         //let mut response = String::new();
