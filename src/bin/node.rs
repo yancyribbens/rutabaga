@@ -195,6 +195,7 @@ async fn connect(
                         );
 
                         let _ = stream.write_all(encode::serialize(&second_message).as_slice());
+
                         info!("reply to version message with Verack");
                     }
                     NetworkMessage::Verack => {
@@ -334,12 +335,79 @@ async fn main() -> std::io::Result<()> {
 mod tests {
     use super::*;
 
-    use std::io::{Read, Write};
-    use std::net::{TcpListener, TcpStream};
+    use std::io::{Write};
+    use std::net::{TcpListener};
     use std::thread;
 
+    fn build_version_message(address: SocketAddr) -> NetworkMessage {
+        // Building version message, see https://en.bitcoin.it/wiki/Protocol_documentation#version
+        let my_address = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
+
+        // "bitfield of features to be enabled for this connection"
+        let services = p2p::ServiceFlags::NONE;
+
+        // "standard UNIX timestamp in seconds"
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time error").as_secs();
+
+        // "The network address of the node receiving this message"
+        let addr_recv = address::Address::new(&address, p2p::ServiceFlags::NONE);
+
+        // "The network address of the node emitting this message"
+        let addr_from = address::Address::new(&my_address, p2p::ServiceFlags::NONE);
+
+        // "Node random nonce, randomly generated every time a version packet is sent. This nonce is used to detect connections to self."
+        let nonce: u64 = bitcoin::secp256k1::rand::thread_rng().gen();
+
+        // "User Agent (0x00 if string is 0 bytes long)"
+        let user_agent = String::from("phantom-node");
+
+        // "The last block received by the emitting node"
+        let start_height: i32 = 0;
+
+        bitcoin::p2p::message::NetworkMessage::Version(message_network::VersionMessage {
+            version: PROTOCOL_VERSION,
+            services,
+            timestamp: timestamp as i64,
+            receiver: addr_recv,
+            sender: addr_from,
+            nonce,
+            user_agent,
+            start_height,
+            relay: false,
+        })
+    }
+
     #[tokio::test]
-    async fn test_no_server_response() {
+    async fn no_server_response() {
+        let dir = tempfile::tempdir().unwrap();
+        let tracker_file = dir.path().join("tracker_file");
+
+        let dir = tempfile::tempdir().unwrap();
+        let outs_file = dir.path().join("outs_file");
+
+        let dir = tempfile::tempdir().unwrap();
+        let spent_file = dir.path().join("spent_file");
+
+        // Bind to port 0 for a random available port
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Spawn mock server and drop connection immediately
+        thread::spawn(move || {
+            if let Ok((mut _socket, _)) = listener.accept() {
+            }
+        });
+
+        let spend_script = ScriptBuf::new();
+
+        let result =
+            connect(Network::Signet, addr, &spend_script, &outs_file, &spent_file, &tracker_file).await;
+        // TODO this should be an error type.
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn handshake_respone() {
         let dir = tempfile::tempdir().unwrap();
         let tracker_file = dir.path().join("tracker_file");
 
@@ -356,25 +424,42 @@ mod tests {
         // Spawn mock server
         thread::spawn(move || {
             if let Ok((mut socket, _)) = listener.accept() {
-                //let mut buf = [0; 5];
-                //socket.read_exact(&mut buf).unwrap();
-                //assert_eq!(&buf, b"HELLO");
-                //socket.write_all(b"WORLD").unwrap();
+
+                // read client handshake
+                let read_stream = socket.try_clone().unwrap();
+                let mut stream_reader = BufReader::new(read_stream);
+                let _version_message = RawNetworkMessage::consensus_decode(&mut stream_reader);
+                //println!("{:?}", version_message);
+                // TODO verify version message
+
+                // write handshake respone
+                let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
+                let version_message = build_version_message(address);
+                let network = Network::Signet;
+                let hand_shake_response = RawNetworkMessage::new(network.magic(), version_message);
+                let _ = socket.write_all(encode::serialize(&hand_shake_response).as_slice());
+
+                // read client verack 
+                let read_stream = socket.try_clone().unwrap();
+                let mut stream_reader = BufReader::new(read_stream);
+                let _verack = RawNetworkMessage::consensus_decode(&mut stream_reader);
+                //println!("{:?}", verack);
+                // TODO verify verack
+                
+                // reply to client with verack completing handshake.
+                let verack = RawNetworkMessage::new(
+                    bitcoin::Network::Signet.magic(),
+                    NetworkMessage::Verack,
+                );
+                let _ = socket.write_all(encode::serialize(&verack).as_slice());
             }
         });
 
         let spend_script = ScriptBuf::new();
 
-        // Run your actual code against `addr`
-        let result =
+        let _result =
             connect(Network::Signet, addr, &spend_script, &outs_file, &spent_file, &tracker_file).await;
-        // TODO this should be an error type.
-        assert!(result.is_ok());
-        //let mut client = TcpStream::connect(addr).unwrap();
-        //client.write_all(b"HELLO").unwrap();
-        //let mut response = String::new();
-        //client.read_to_string(&mut response).unwrap();
-
-        //assert_eq!(response, "WORLD");
+        // TODO should be error, socket closed.
+        //println!("{:?}", result);
     }
 }
