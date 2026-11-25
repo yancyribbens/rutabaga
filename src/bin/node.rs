@@ -80,6 +80,28 @@ fn build_headers_request(locator_hash: BlockHash) -> RawNetworkMessage {
     )
 }
 
+// expected workflow:
+// --- handshake ---
+// 1) Send a version message to host
+//    // TODO the height should be sent instead of always zero.
+// 2) Handle response from version message
+// 3) Send Verack in respons to version message
+// 4) Handle Verack message from host
+//  --- ibd ---
+// 5) Lookup the last hash received with HashTracker and send that to host
+//    // TODO the locator should be a list of hashes.  Currently only sending
+//    the first hash is fine when starting from zero, but, if a fork happend
+//    this causes the host to start transmitting again from the beginning.
+// 6) Send GetHeadersMessage with last hash (for IBD this will be the genesis block)
+// 7) Handle the Headers respons from host.  If the headers response is empty then we are up to
+//    date.  If it is not, then push headers into queue
+// 8) Send GetData with the list of headers from (7) which will be in 2k size chunks
+// 9) Handle the reply from GetData which is a Block corresponding to each hash header sent in (8)
+//    Remove the header from the queue created in (7) until there is none left, then send a
+//    getheader with the last one recieved
+//  10) repeat step (7) - Handle Headers adding them to queue
+//  11) repeat step (8) - Send GetData
+//  12) repeat until the reply to GetHeadersMessage is empty set meaning sync is complete.
 async fn connect(
     network: Network,
     address: SocketAddr,
@@ -199,12 +221,14 @@ async fn connect(
                         info!("reply to version message with Verack");
                     }
                     NetworkMessage::Verack => {
+                        println!("got verack msg");
                         info!("peer sent Verack");
 
                         let (height, hash) = hash_tracker.last_hash();
                         info!("send block height {} {:?} to peer", height, hash);
 
                         let msg = build_headers_request(hash);
+                        println!("send headers request: {:?}", msg);
                         let _ = stream.write_all(encode::serialize(&msg).as_slice());
                     }
                     NetworkMessage::Ping(nonce) => {
@@ -497,6 +521,59 @@ mod tests {
                 let net_msg = RawNetworkMessage::consensus_decode(&mut stream_reader).unwrap();
                 match net_msg.payload() {
                     NetworkMessage::Pong(n)=> { assert_eq!(*n, nonce) },
+                    _ => panic!("expected pong")
+                }
+            }
+        });
+
+        let spend_script = ScriptBuf::new();
+
+        let _result =
+            connect(Network::Signet, addr, &spend_script, &outs_file, &spent_file, &tracker_file).await;
+        // TODO should be error, socket closed.
+        //println!("{:?}", result);
+    }
+
+    #[tokio::test]
+    async fn ibd() {
+        let dir = tempfile::tempdir().unwrap();
+        let tracker_file = dir.path().join("tracker_file");
+
+        let dir = tempfile::tempdir().unwrap();
+        let outs_file = dir.path().join("outs_file");
+
+        let dir = tempfile::tempdir().unwrap();
+        let spent_file = dir.path().join("spent_file");
+
+        // Bind to port 0 for a random available port
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Spawn mock server
+        thread::spawn(move || {
+            if let Ok((mut socket, _)) = listener.accept() {
+
+                // handle headers request. 
+                let read_stream = socket.try_clone().unwrap();
+                let mut stream_reader = BufReader::new(read_stream);
+                let net_msg = RawNetworkMessage::consensus_decode(&mut stream_reader).unwrap();
+                println!("{:?}", net_msg);
+
+                // verack starts IBD.
+                let verack = RawNetworkMessage::new(
+                    bitcoin::Network::Signet.magic(),
+                    NetworkMessage::Verack,
+                );
+                let _ = socket.write_all(encode::serialize(&verack).as_slice());
+
+                // handle headers request. 
+                let read_stream = socket.try_clone().unwrap();
+                let mut stream_reader = BufReader::new(read_stream);
+                let net_msg = RawNetworkMessage::consensus_decode(&mut stream_reader).unwrap();
+                println!("{:?}", net_msg);
+
+                match net_msg.payload() {
+                    NetworkMessage::GetHeaders(GetHeadersMessage { version: v, locator_hashes: vbh, stop_hash: bh } )=> { println!("{:?}", bh) },
                     _ => panic!("expected pong")
                 }
             }
