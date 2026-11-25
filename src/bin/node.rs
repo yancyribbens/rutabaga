@@ -467,4 +467,46 @@ mod tests {
         // TODO should be error, socket closed.
         //println!("{:?}", result);
     }
+
+    #[tokio::test]
+    async fn responds_to_ping_with_pong() {
+        let dir = tempfile::tempdir().unwrap();
+        let tracker_file = dir.path().join("tracker_file");
+
+        let dir = tempfile::tempdir().unwrap();
+        let outs_file = dir.path().join("outs_file");
+
+        let dir = tempfile::tempdir().unwrap();
+        let spent_file = dir.path().join("spent_file");
+
+        // Bind to port 0 for a random available port
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Spawn mock server
+        thread::spawn(move || {
+            if let Ok((mut socket, _)) = listener.accept() {
+                // send ping 
+                let nonce = bitcoin::secp256k1::rand::thread_rng().gen();
+                let ping = NetworkMessage::Ping(nonce);
+                let _ = socket.write_all(encode::serialize(&ping).as_slice());
+
+                // read pong. 
+                let read_stream = socket.try_clone().unwrap();
+                let mut stream_reader = BufReader::new(read_stream);
+                let net_msg = RawNetworkMessage::consensus_decode(&mut stream_reader).unwrap();
+                match net_msg.payload() {
+                    NetworkMessage::Pong(n)=> { assert_eq!(*n, nonce) },
+                    _ => panic!("expected pong")
+                }
+            }
+        });
+
+        let spend_script = ScriptBuf::new();
+
+        let _result =
+            connect(Network::Signet, addr, &spend_script, &outs_file, &spent_file, &tracker_file).await;
+        // TODO should be error, socket closed.
+        //println!("{:?}", result);
+    }
 }
