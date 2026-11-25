@@ -428,9 +428,12 @@ mod tests {
                 // read client handshake
                 let read_stream = socket.try_clone().unwrap();
                 let mut stream_reader = BufReader::new(read_stream);
-                let _version_message = RawNetworkMessage::consensus_decode(&mut stream_reader);
-                //println!("{:?}", version_message);
-                // TODO verify version message
+                let net_msg = RawNetworkMessage::consensus_decode(&mut stream_reader).unwrap();
+
+                match net_msg.payload() {
+                    NetworkMessage::Version(_) => {},
+                    _ => panic!("expected version message"),
+                }
 
                 // write handshake respone
                 let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
@@ -442,10 +445,12 @@ mod tests {
                 // read client verack 
                 let read_stream = socket.try_clone().unwrap();
                 let mut stream_reader = BufReader::new(read_stream);
-                let _verack = RawNetworkMessage::consensus_decode(&mut stream_reader);
-                //println!("{:?}", verack);
-                // TODO verify verack
-                
+                let net_msg = RawNetworkMessage::consensus_decode(&mut stream_reader).unwrap();
+                match net_msg.payload() {
+                    NetworkMessage::Verack => {},
+                    _ => panic!("expected verack message"),
+                }
+ 
                 // reply to client with verack completing handshake.
                 let verack = RawNetworkMessage::new(
                     bitcoin::Network::Signet.magic(),
