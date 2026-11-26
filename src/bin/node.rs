@@ -573,7 +573,17 @@ mod tests {
                 println!("{:?}", net_msg);
 
                 match net_msg.payload() {
-                    NetworkMessage::GetHeaders(GetHeadersMessage { version: v, locator_hashes: vbh, stop_hash: bh } )=> { println!("{:?}", bh) },
+                    NetworkMessage::GetHeaders(GetHeadersMessage { version: v, locator_hashes: vbh, stop_hash: bh } )=> {
+                        let version = bitcoin::blockdata::block::Version::from_consensus(2);
+                        let prev_blockhash = BlockHash::all_zeros();
+                        let merkle_root = bitcoin::TxMerkleNode::all_zeros();
+                        let time: u32 = bitcoin::secp256k1::rand::thread_rng().gen();
+                        let bits = bitcoin::CompactTarget::from_consensus(bitcoin::secp256k1::rand::thread_rng().gen());
+                        let nonce: u32 = bitcoin::secp256k1::rand::thread_rng().gen();
+                        let header = bitcoin::blockdata::block::Header { version, prev_blockhash, merkle_root, time, bits, nonce };
+
+                        let _ = socket.write_all(encode::serialize(&header).as_slice());
+                    },
                     _ => panic!("expected pong")
                 }
             }
