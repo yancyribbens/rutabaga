@@ -157,6 +157,7 @@ async fn connect(
                             let spent_outs = outpoint_grep(outs_file.read(), block);
                             spent_file.append_entries(spent_outs);
                         } else {
+                            println!("ignore");
                             debug!(
                                 "ignoring block {} received out of order preceded by {}",
                                 block_hash, prev_blockhash
@@ -164,6 +165,7 @@ async fn connect(
                         }
 
                         if blockhash_queue.is_empty() {
+                            println!("get headers");
                             debug!("done, ready for next block");
                             let msg = build_headers_request(block_hash);
                             let _ = stream.write_all(encode::serialize(&msg).as_slice());
@@ -171,6 +173,7 @@ async fn connect(
                     }
                     NetworkMessage::Headers(headers) => {
                         if headers.is_empty() {
+                            println!("empty");
                             info!("No new headers from peer (all caught up).");
                         } else {
                             let hashes: Vec<BlockHash> =
@@ -178,14 +181,14 @@ async fn connect(
                             let inv_vec: Vec<Inventory> =
                                 hashes.iter().map(|h| Inventory::Block(*h)).collect();
 
-                            let inv_message = RawNetworkMessage::new(
+                            let get_data_msg = RawNetworkMessage::new(
                                 bitcoin::Network::Signet.magic(),
                                 NetworkMessage::GetData(inv_vec.clone()),
                             );
 
                             blockhash_queue = hashes;
 
-                            let _ = stream.write_all(encode::serialize(&inv_message).as_slice());
+                            let _ = stream.write_all(encode::serialize(&get_data_msg).as_slice());
                         }
                     }
                     NetworkMessage::Inv(inv_vec) => {
@@ -221,14 +224,12 @@ async fn connect(
                         info!("reply to version message with Verack");
                     }
                     NetworkMessage::Verack => {
-                        println!("got verack msg");
                         info!("peer sent Verack");
 
                         let (height, hash) = hash_tracker.last_hash();
                         info!("send block height {} {:?} to peer", height, hash);
 
                         let msg = build_headers_request(hash);
-                        println!("send headers request: {:?}", msg);
                         let _ = stream.write_all(encode::serialize(&msg).as_slice());
                     }
                     NetworkMessage::Ping(nonce) => {
@@ -299,12 +300,10 @@ fn build_version_message(address: SocketAddr) -> NetworkMessage {
     })
 }
 
-#[tokio::main]
-async fn main() -> std::io::Result<()> {
-    env_logger::init();
-    info!("Loading Rutabaga");
-
-    let args: Vec<String> = env::args().collect();
+use std::path::PathBuf;
+fn arg_parse(args: Vec<String>) -> Option<(SocketAddr, PathBuf, ScriptBuf, PathBuf, PathBuf)> {
+    // prevent duplicates
+    let mut paths = std::collections::HashSet::new();
 
     if args.len() < 5 {
         error!(
@@ -315,16 +314,14 @@ async fn main() -> std::io::Result<()> {
     }
 
     let str_address = &args[1];
-    let address: SocketAddr = str_address.parse().unwrap_or_else(|error| {
+    let address = str_address.parse().unwrap_or_else(|error| {
         error!("Error parsing address: {:?}", error);
         process::exit(1);
     });
 
-    let mut paths = std::collections::HashSet::new();
-
     let str_tracker_path = &args[2];
     paths.insert(str_tracker_path);
-    let tracker_path = Path::new(&str_tracker_path);
+    let tracker_path = Path::new(&str_tracker_path).to_path_buf();
 
     let str_keys_path = &args[3];
     paths.insert(str_keys_path);
@@ -332,11 +329,11 @@ async fn main() -> std::io::Result<()> {
 
     let str_outputs_path = &args[4];
     paths.insert(str_outputs_path);
-    let outputs_path = Path::new(&str_outputs_path);
+    let outputs_path = Path::new(&str_outputs_path).to_path_buf();
 
     let str_spent_path = &args[5];
     paths.insert(str_spent_path);
-    let spent_path = Path::new(&str_spent_path);
+    let spent_path = Path::new(&str_spent_path).to_path_buf();
 
     if paths.len() < 4 {
         error!(
@@ -344,48 +341,47 @@ async fn main() -> std::io::Result<()> {
             str_tracker_path, str_keys_path, str_outputs_path, str_spent_path
         );
         // TODO this should be an error type returned
-        return Ok(())
+        return None
     }
 
+    Some((address, tracker_path, spend_script, outputs_path, spent_path))
+}
+
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
+    env_logger::init();
+    info!("Loading Rutabaga");
+
+    let args: Vec<String> = env::args().collect();
+    let (address, tracker_path, spend_script, outputs_path, spent_path) = arg_parse(args).unwrap();
+
     let _ =
-        connect(Network::Signet, address, &spend_script, outputs_path, spent_path, tracker_path)
+        connect(Network::Signet, address, &spend_script, &outputs_path, &spent_path, &tracker_path)
             .await;
 
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use std::io::{Write};
-    use std::net::{TcpListener};
+    use std::io::Write;
+    use std::net::TcpListener;
     use std::thread;
 
+    use bitcoin::blockdata::block::Header;
+
+    use tempfile::NamedTempFile;
+
     fn build_version_message(address: SocketAddr) -> NetworkMessage {
-        // Building version message, see https://en.bitcoin.it/wiki/Protocol_documentation#version
         let my_address = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
-
-        // "bitfield of features to be enabled for this connection"
         let services = p2p::ServiceFlags::NONE;
-
-        // "standard UNIX timestamp in seconds"
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time error").as_secs();
-
-        // "The network address of the node receiving this message"
         let addr_recv = address::Address::new(&address, p2p::ServiceFlags::NONE);
-
-        // "The network address of the node emitting this message"
         let addr_from = address::Address::new(&my_address, p2p::ServiceFlags::NONE);
-
-        // "Node random nonce, randomly generated every time a version packet is sent. This nonce is used to detect connections to self."
         let nonce: u64 = bitcoin::secp256k1::rand::thread_rng().gen();
-
-        // "User Agent (0x00 if string is 0 bytes long)"
         let user_agent = String::from("phantom-node");
-
-        // "The last block received by the emitting node"
         let start_height: i32 = 0;
 
         bitcoin::p2p::message::NetworkMessage::Version(message_network::VersionMessage {
@@ -401,16 +397,17 @@ mod tests {
         })
     }
 
+    fn files() -> (NamedTempFile, NamedTempFile, NamedTempFile) {
+        let tracker_file = NamedTempFile::new().unwrap();
+        let outs_file = NamedTempFile::new().unwrap();
+        let spent_file = NamedTempFile::new().unwrap();
+
+        (tracker_file, outs_file, spent_file)
+    }
+
     #[tokio::test]
     async fn no_server_response() {
-        let dir = tempfile::tempdir().unwrap();
-        let tracker_file = dir.path().join("tracker_file");
-
-        let dir = tempfile::tempdir().unwrap();
-        let outs_file = dir.path().join("outs_file");
-
-        let dir = tempfile::tempdir().unwrap();
-        let spent_file = dir.path().join("spent_file");
+        let (tracker_file, outs_file, spent_file) = files();
 
         // Bind to port 0 for a random available port
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -425,28 +422,21 @@ mod tests {
         let spend_script = ScriptBuf::new();
 
         let result =
-            connect(Network::Signet, addr, &spend_script, &outs_file, &spent_file, &tracker_file).await;
+            connect(Network::Signet, addr, &spend_script, &outs_file.path(), &spent_file.path(), &tracker_file.path()).await;
         // TODO this should be an error type.
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn handshake_respone() {
-        let dir = tempfile::tempdir().unwrap();
-        let tracker_file = dir.path().join("tracker_file");
-
-        let dir = tempfile::tempdir().unwrap();
-        let outs_file = dir.path().join("outs_file");
-
-        let dir = tempfile::tempdir().unwrap();
-        let spent_file = dir.path().join("spent_file");
+        let (tracker_file, outs_file, spent_file) = files();
 
         // Bind to port 0 for a random available port
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
 
         // Spawn mock server
-        thread::spawn(move || {
+        let handle = thread::spawn(move || {
             if let Ok((mut socket, _)) = listener.accept() {
 
                 // read client handshake
@@ -487,33 +477,38 @@ mod tests {
         let spend_script = ScriptBuf::new();
 
         let _result =
-            connect(Network::Signet, addr, &spend_script, &outs_file, &spent_file, &tracker_file).await;
-        // TODO should be error, socket closed.
-        //println!("{:?}", result);
+            connect(Network::Signet, addr, &spend_script, &outs_file.path(), &spent_file.path(), &tracker_file.path()).await;
+
+        match handle.join() {
+            Ok(result) => assert!(result == ()),
+            Err(_) => panic!("err")
+        }
     }
 
     #[tokio::test]
     async fn responds_to_ping_with_pong() {
-        let dir = tempfile::tempdir().unwrap();
-        let tracker_file = dir.path().join("tracker_file");
-
-        let dir = tempfile::tempdir().unwrap();
-        let outs_file = dir.path().join("outs_file");
-
-        let dir = tempfile::tempdir().unwrap();
-        let spent_file = dir.path().join("spent_file");
+        let (tracker_file, outs_file, spent_file) = files();
 
         // Bind to port 0 for a random available port
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
 
         // Spawn mock server
-        thread::spawn(move || {
+        let handle = thread::spawn(move || {
             if let Ok((mut socket, _)) = listener.accept() {
+                // handle headers request. 
+                let read_stream = socket.try_clone().unwrap();
+                let mut stream_reader = BufReader::new(read_stream);
+                let _net_msg = RawNetworkMessage::consensus_decode(&mut stream_reader).unwrap();
+
                 // send ping 
                 let nonce = bitcoin::secp256k1::rand::thread_rng().gen();
                 let ping = NetworkMessage::Ping(nonce);
-                let _ = socket.write_all(encode::serialize(&ping).as_slice());
+                let ping_msg = RawNetworkMessage::new(
+                    bitcoin::Network::Signet.magic(),
+                    ping,
+                );
+                let _ = socket.write_all(encode::serialize(&ping_msg).as_slice());
 
                 // read pong. 
                 let read_stream = socket.try_clone().unwrap();
@@ -529,35 +524,34 @@ mod tests {
         let spend_script = ScriptBuf::new();
 
         let _result =
-            connect(Network::Signet, addr, &spend_script, &outs_file, &spent_file, &tracker_file).await;
-        // TODO should be error, socket closed.
-        //println!("{:?}", result);
+            connect(Network::Signet, addr, &spend_script, &outs_file.path(), &spent_file.path(), &tracker_file.path()).await;
+
+        match handle.join() {
+            Ok(result) => assert!(result == ()),
+            Err(_) => panic!("err")
+        }
     }
 
     #[tokio::test]
-    async fn ibd() {
-        let dir = tempfile::tempdir().unwrap();
-        let tracker_file = dir.path().join("tracker_file");
-
-        let dir = tempfile::tempdir().unwrap();
-        let outs_file = dir.path().join("outs_file");
-
-        let dir = tempfile::tempdir().unwrap();
-        let spent_file = dir.path().join("spent_file");
+    async fn verack_begins_ibd() {
+        // * -> node spins up beginning with version message.
+        // * <- phantom node reads version message.
+        // * <- phantom node sends verack message.
+        // * -> node reads verack message.
+        // * -> node begins IBD requesting block headers.
+        let (tracker_file, outs_file, spent_file) = files();
 
         // Bind to port 0 for a random available port
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
 
         // Spawn mock server
-        thread::spawn(move || {
+        let handle = thread::spawn(move || {
             if let Ok((mut socket, _)) = listener.accept() {
-
                 // handle headers request. 
                 let read_stream = socket.try_clone().unwrap();
                 let mut stream_reader = BufReader::new(read_stream);
-                let net_msg = RawNetworkMessage::consensus_decode(&mut stream_reader).unwrap();
-                println!("{:?}", net_msg);
+                let _net_msg = RawNetworkMessage::consensus_decode(&mut stream_reader).unwrap();
 
                 // verack starts IBD.
                 let verack = RawNetworkMessage::new(
@@ -570,20 +564,9 @@ mod tests {
                 let read_stream = socket.try_clone().unwrap();
                 let mut stream_reader = BufReader::new(read_stream);
                 let net_msg = RawNetworkMessage::consensus_decode(&mut stream_reader).unwrap();
-                println!("{:?}", net_msg);
 
                 match net_msg.payload() {
-                    NetworkMessage::GetHeaders(GetHeadersMessage { version: v, locator_hashes: vbh, stop_hash: bh } )=> {
-                        let version = bitcoin::blockdata::block::Version::from_consensus(2);
-                        let prev_blockhash = BlockHash::all_zeros();
-                        let merkle_root = bitcoin::TxMerkleNode::all_zeros();
-                        let time: u32 = bitcoin::secp256k1::rand::thread_rng().gen();
-                        let bits = bitcoin::CompactTarget::from_consensus(bitcoin::secp256k1::rand::thread_rng().gen());
-                        let nonce: u32 = bitcoin::secp256k1::rand::thread_rng().gen();
-                        let header = bitcoin::blockdata::block::Header { version, prev_blockhash, merkle_root, time, bits, nonce };
-
-                        let _ = socket.write_all(encode::serialize(&header).as_slice());
-                    },
+                    NetworkMessage::GetHeaders(GetHeadersMessage { .. } )=> {},
                     _ => panic!("expected pong")
                 }
             }
@@ -592,8 +575,140 @@ mod tests {
         let spend_script = ScriptBuf::new();
 
         let _result =
-            connect(Network::Signet, addr, &spend_script, &outs_file, &spent_file, &tracker_file).await;
-        // TODO should be error, socket closed.
-        //println!("{:?}", result);
+            connect(Network::Signet, addr, &spend_script, &outs_file.path(), &spent_file.path(), &tracker_file.path()).await;
+
+        match handle.join() {
+            Ok(result) => assert!(result == ()),
+            Err(_) => panic!("err")
+        }
+    }
+
+    #[tokio::test]
+    async fn header_triggers_get_data_request() {
+        // * -> node spins up beginning with version message.
+        // * <- phantom node reads version message.
+        // * <- phantom node sends header message.
+        // * -> node reads header message.
+        // * -> node sends get data since it does not have that header.
+        // * <- phantom node reads get data message. 
+        let (tracker_file, outs_file, spent_file) = files();
+
+        // Bind to port 0 for a random available port
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Spawn mock server
+        let handle = thread::spawn(move || {
+            if let Ok((mut socket, _)) = listener.accept() {
+                // handle headers msg. 
+                let read_stream = socket.try_clone().unwrap();
+                let mut stream_reader = BufReader::new(read_stream);
+                let _ = RawNetworkMessage::consensus_decode(&mut stream_reader).unwrap();
+
+                // send header
+                let version = bitcoin::blockdata::block::Version::from_consensus(2);
+                let prev_blockhash = BlockHash::all_zeros();
+                let merkle_root = bitcoin::TxMerkleNode::all_zeros();
+                let time: u32 = bitcoin::secp256k1::rand::thread_rng().gen();
+                let bits = bitcoin::CompactTarget::from_consensus(bitcoin::secp256k1::rand::thread_rng().gen());
+                let nonce: u32 = bitcoin::secp256k1::rand::thread_rng().gen();
+                let header = Header { version, prev_blockhash, merkle_root, time, bits, nonce };
+                let header_msg = NetworkMessage::Headers(vec![header]);
+
+                let raw_msg =  RawNetworkMessage::new(
+                    bitcoin::Network::Signet.magic(),
+                    header_msg,
+                );
+                let _ = socket.write_all(encode::serialize(&raw_msg).as_slice());
+
+                // handle get data request. 
+                let read_stream = socket.try_clone().unwrap();
+                let mut stream_reader = BufReader::new(read_stream);
+                let net_msg = RawNetworkMessage::consensus_decode(&mut stream_reader).unwrap();
+
+                match net_msg.payload() {
+                    NetworkMessage::GetData(_) => {},
+                    _ => panic!("expected get data msg")
+                }
+            }
+        });
+
+        let spend_script = ScriptBuf::new();
+
+        let _result =
+            connect(Network::Signet, addr, &spend_script, &outs_file.path(), &spent_file.path(), &tracker_file.path()).await;
+
+        match handle.join() {
+            Ok(result) => assert!(result == ()),
+            Err(_) => panic!("err")
+        }
+    }
+
+    #[tokio::test]
+    async fn send_block_msg() {
+        // * -> node spins up beginning with version message.
+        // * <- phantom node reads version message.
+        // * <- phantom node sends block.
+        // * -> node reads block message.
+        // * -> node requests next set of blocks starting from header.
+        // * <- phantom node reads request for header.
+        let (tracker_file, outs_file, spent_file) = files();
+
+        // Bind to port 0 for a random available port
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Spawn mock server
+        let handle = thread::spawn(move || {
+            if let Ok((mut socket, _)) = listener.accept() {
+                // handle headers msg. 
+                let read_stream = socket.try_clone().unwrap();
+                let mut stream_reader = BufReader::new(read_stream);
+                let _ = RawNetworkMessage::consensus_decode(&mut stream_reader).unwrap();
+
+                // send block 
+                let version = bitcoin::blockdata::block::Version::from_consensus(2);
+                let prev_blockhash = BlockHash::all_zeros();
+                let merkle_root = bitcoin::TxMerkleNode::all_zeros();
+                let time: u32 = bitcoin::secp256k1::rand::thread_rng().gen();
+                let bits = bitcoin::CompactTarget::from_consensus(bitcoin::secp256k1::rand::thread_rng().gen());
+                let nonce: u32 = bitcoin::secp256k1::rand::thread_rng().gen();
+                let header = Header { version, prev_blockhash, merkle_root, time, bits, nonce };
+
+                let block = bitcoin::blockdata::block::Block {
+                    header,
+                    txdata: vec![]
+                };
+
+                let block_msg = NetworkMessage::Block(block);
+
+                let raw_msg =  RawNetworkMessage::new(
+                    bitcoin::Network::Signet.magic(),
+                    block_msg,
+                );
+
+                let _ = socket.write_all(encode::serialize(&raw_msg).as_slice());
+
+                // handle get data request. 
+                let read_stream = socket.try_clone().unwrap();
+                let mut stream_reader = BufReader::new(read_stream);
+                let net_msg = RawNetworkMessage::consensus_decode(&mut stream_reader).unwrap();
+
+                match net_msg.payload() {
+                    NetworkMessage::GetHeaders(_) => {},
+                    _ => panic!("expected get headers")
+                }
+            }
+        });
+
+        let spend_script = ScriptBuf::new();
+
+        let _result =
+            connect(Network::Signet, addr, &spend_script, &outs_file.path(), &spent_file.path(), &tracker_file.path()).await;
+
+        match handle.join() {
+            Ok(result) => assert!(result == ()),
+            Err(_) => panic!("err")
+        }
     }
 }
