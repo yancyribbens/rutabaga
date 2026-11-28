@@ -15,6 +15,7 @@ env_logger = "0.11"
 [dev-dependencies]
 tempfile = "3"
 arbtest = "0.3.2"
+phantom-node = { git = "https://github.com/yancyribbens/phantom-node", rev = "474eb13345ecfc83024571d6b926cea586878597" }
 
 [[bin]]
 name = "wallet"

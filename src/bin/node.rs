@@ -488,43 +488,12 @@ mod tests {
     #[tokio::test]
     async fn responds_to_ping_with_pong() {
         let (tracker_file, outs_file, spent_file) = files();
-
-        // Bind to port 0 for a random available port
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        // Spawn mock server
-        let handle = thread::spawn(move || {
-            if let Ok((mut socket, _)) = listener.accept() {
-                // handle headers request. 
-                let read_stream = socket.try_clone().unwrap();
-                let mut stream_reader = BufReader::new(read_stream);
-                let _net_msg = RawNetworkMessage::consensus_decode(&mut stream_reader).unwrap();
-
-                // send ping 
-                let nonce = bitcoin::secp256k1::rand::thread_rng().gen();
-                let ping = NetworkMessage::Ping(nonce);
-                let ping_msg = RawNetworkMessage::new(
-                    bitcoin::Network::Signet.magic(),
-                    ping,
-                );
-                let _ = socket.write_all(encode::serialize(&ping_msg).as_slice());
-
-                // read pong. 
-                let read_stream = socket.try_clone().unwrap();
-                let mut stream_reader = BufReader::new(read_stream);
-                let net_msg = RawNetworkMessage::consensus_decode(&mut stream_reader).unwrap();
-                match net_msg.payload() {
-                    NetworkMessage::Pong(n)=> { assert_eq!(*n, nonce) },
-                    _ => panic!("expected pong")
-                }
-            }
-        });
+        let (socket, handle) = phantom_node::ping_pong().await;
 
         let spend_script = ScriptBuf::new();
 
         let _result =
-            connect(Network::Signet, addr, &spend_script, &outs_file.path(), &spent_file.path(), &tracker_file.path()).await;
+            connect(Network::Signet, socket, &spend_script, &outs_file.path(), &spent_file.path(), &tracker_file.path()).await;
 
         match handle.join() {
             Ok(result) => assert!(result == ()),
